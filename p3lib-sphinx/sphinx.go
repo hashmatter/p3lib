@@ -2,7 +2,7 @@ package sphinx
 
 import (
 	"crypto"
-	"crypto/sha256"
+	scrypto "github.com/gpestana/p3lib/p3lib-sphinx/crypto"
 	"io"
 )
 
@@ -15,8 +15,6 @@ const (
 	// hop information
 	NumMaxHops = 15
 )
-
-type Hash256 [sha256.Size]byte
 
 // A sphinx packet wraps the encrypted layers for each of the relays to decrypt and
 // retrieve routing data necessary to forward the packet to the next relay. The
@@ -46,12 +44,10 @@ func New() *Packet {
 	return &Packet{}
 }
 
-// gereateSharedSecrets generates the shared secret for each relay in the
-// circuit using ECDH.
-func generateSharedSecrets(circuitPubKeys []crypto.PublicKey, sessionKey crypto.PrivateKey) ([]Hash256, error) {
+func generateSharedSecrets(circuitPubKeys []crypto.PublicKey, sessionKey crypto.PrivateKey) ([]scrypto.Hash256, error) {
 
 	numHops := len(circuitPubKeys)
-	generatedSecretKeys := make([]Hash256, numHops)
+	generatedSecretKeys := make([]scrypto.Hash256, numHops)
 
 	return generatedSecretKeys, nil
 }
