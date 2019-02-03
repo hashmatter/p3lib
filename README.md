@@ -2,16 +2,31 @@
 
 ![Version](https://img.shields.io/badge/version-0.1-blue.svg?style=for-the-badge)
 
-p3lib implements a set of privacy preserving primitives (p3) and protocols for
-routing and messaging in P2P networks.
+**p3lib, the toolbox for engineers to enhance privacy in P2P networks**
 
-| Layer | p3lib component |
+p3lib implements a set of privacy preserving primitives (p3) and protocols for
+routing and messaging in P2P networks. p3lib is currently focusing on
+onion-based routing protocols for any type of P2P networks. It implements onion
+packet formats, routing protocols and path construction strategies that can be
+used to enhance network privacy. Currently, the protocols and primitives
+implemented by p3lib are based on research works such as Sphinx [1], HORNET [2]
+and ShwadowWalker [3]. 
+
+| Layer | p3lib components |
 | --- | --- |
 | Packet format  | `p3lib-sphinx` [1]  |
 | Routing  | `p3lib-hornet` [2]  |
 | Path construction  | `p3lib-shadowwalker` [3]  |
 
 For more information about each p3lib component, check the [specifications](./specs).
+
+### Privacy design
+
+p3lib provides a set of interfaces that play together nicely and can be used
+separately or as a whole. The [interfaces](./specs/interfaces.md) specs show the
+current interfaces and abstractions that p3lib exposes and implements.
+
+p3lib is designed to integrate seamlessly with [libp2p](https://github.com/libp2p).
 
 ### References
 

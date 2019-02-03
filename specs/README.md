@@ -7,7 +7,15 @@ in P2P networks. It is split into 3 main components:
 | --- | --- |
 | Packet format  | `p3lib-sphinx` [1]  |
 | Routing  | `p3lib-hornet` [2]  |
-| Path construction  | `p3lib-shadowwalker` [3]  |
+| Path construction | `p3lib-shadowwalker` [3]  |
+
+As a general design goal, p3lib is built to seamlessly integrate with
+[libp2p](https://github.com/libp2p).
+
+## Interfaces
+
+The interfaces exposed and implemented are documented under the 
+[interfaces specs](./interfaces.md)
 
 ## p3lib-sphinx
 
