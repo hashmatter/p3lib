@@ -2,8 +2,10 @@ package sphinx
 
 import (
 	"crypto"
+	"crypto/ecdsa"
 	scrypto "github.com/gpestana/p3lib/p3lib-sphinx/crypto"
 	"io"
+	"log"
 )
 
 const (
@@ -44,12 +46,25 @@ func New() *Packet {
 	return &Packet{}
 }
 
-func generateSharedSecrets(circuitPubKeys []crypto.PublicKey, sessionKey crypto.PrivateKey) ([]scrypto.Hash256, error) {
+// generates all shared secrets for a given path.
+func generateSharedSecrets(circuitPubKeys []crypto.PublicKey,
+	sessionKey ecdsa.PrivateKey) ([]scrypto.Hash256, error) {
 
 	numHops := len(circuitPubKeys)
-	generatedSecretKeys := make([]scrypto.Hash256, numHops)
+	sharedSecrets := make([]scrypto.Hash256, numHops)
 
-	return generatedSecretKeys, nil
+	// set initial conditions
+	lastEphKey := sessionKey.Public()
+	hopSharedSecret, err := scrypto.GenerateECDHSharedSecret(
+		circuitPubKeys[0].(*ecdsa.PublicKey), &sessionKey)
+	if err != nil {
+		return sharedSecrets, err
+	}
+	lastBlindingFactor := scrypto.ComputeBlindingFactor(lastEphKey.(ecdsa.PublicKey), hopSharedSecret)
+
+	log.Println(lastEphKey, hopSharedSecret, lastBlindingFactor)
+
+	return sharedSecrets, nil
 }
 
 // HopData contains the routing information for each relayer to forward the
