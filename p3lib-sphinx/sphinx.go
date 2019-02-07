@@ -6,7 +6,6 @@ import (
 	ec "crypto/elliptic"
 	"errors"
 	scrypto "github.com/gpestana/p3lib/p3lib-sphinx/crypto"
-	"io"
 	"math/big"
 )
 
@@ -19,6 +18,8 @@ const (
 	// hop information
 	NumMaxHops = 15
 )
+
+type peerRoutingInfo struct{}
 
 // A sphinx packet wraps the encrypted layers for each of the relays to decrypt and
 // retrieve routing data necessary to forward the packet to the next relay. The
@@ -90,7 +91,10 @@ func generateSharedSecrets(circuitPubKeys []crypto.PublicKey,
 
 		// computes shared secret
 		currentHopPubKey := circuitPubKeys[i].(*ecdsa.PublicKey)
-		blindedPrivateKey := ecdsa.PrivateKey{*newGroupElement, privElement} // is this correct??
+		blindedPrivateKey := ecdsa.PrivateKey{
+			PublicKey: *newGroupElement,
+			D:         privElement,
+		} // is this correct??
 		sharedSecret = scrypto.GenerateECDHSharedSecret(currentHopPubKey, &blindedPrivateKey)
 
 		sharedSecrets[i] = sharedSecret
@@ -98,10 +102,11 @@ func generateSharedSecrets(circuitPubKeys []crypto.PublicKey,
 		// computes next blinding factor
 		blindingF = scrypto.ComputeBlindingFactor(newGroupElement, sharedSecret)
 	}
-
 	return sharedSecrets, nil
 }
 
+// blinds a group element given a blinding factor and returns both private and
+// public keys of the new element
 func deriveGroupElementPair(privElement big.Int, blindingF scrypto.Hash256, curve ec.Curve) (*ecdsa.PublicKey, *big.Int) {
 	var pointBlindingF big.Int
 	pointBlindingF.SetBytes(blindingF[:])
@@ -109,9 +114,18 @@ func deriveGroupElementPair(privElement big.Int, blindingF scrypto.Hash256, curv
 	privElement.Mod(&privElement, curve.Params().N)
 
 	x, y := curve.Params().ScalarBaseMult(privElement.Bytes())
-	pubkey := ecdsa.PublicKey{curve, x, y}
+	pubkey := ecdsa.PublicKey{Curve: curve, X: x, Y: y}
 
 	return &pubkey, &privElement
+}
+
+// blinds a group element given a blinding factor but returns only the public
+// key. this is a special case of deriveGroupElementPair() which does not
+// compute the private key of the blinded element. because of that, this
+// function is more efficient and suitable for relays
+func blindGroupElement(el *ecdsa.PublicKey, blindingF []byte, curve ec.Curve) *ecdsa.PublicKey {
+	newX, newY := curve.Params().ScalarMult(el.X, el.Y, blindingF)
+	return &ecdsa.PublicKey{curve, newX, newY}
 }
 
 func copyPublicKey(pk *ecdsa.PublicKey) *ecdsa.PublicKey {
@@ -121,27 +135,3 @@ func copyPublicKey(pk *ecdsa.PublicKey) *ecdsa.PublicKey {
 	newPk.Y = pk.Y
 	return &newPk
 }
-
-// ephemeral key is computed by multiplying the public key with a blinding
-// factor.
-func computeEphKey(pubkey *ecdsa.PublicKey, blindingFactor scrypto.Hash256) *ecdsa.PublicKey {
-
-	return pubkey
-}
-
-// HopData contains the routing information for each relayer to forward the
-// packet in the circuit. It has with fixed size.
-type HopData struct {
-	//
-}
-
-func (hd *HopData) Encode(w io.Writer) error {
-	return nil
-}
-func (hd *HopData) Decode(r io.Reader) error {
-	return nil
-}
-
-// ploaceholder for peer routing information, namely its network address and its
-// publickey
-type peerRoutingInfo struct{}
