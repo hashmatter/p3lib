@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	//scrypto "github.com/gpestana/p3lib/p3lib-sphinx/crypto"
 	//scrypto "github.com/hashmatter/p3lib/p3lib-sphinx/crypto"
-	"log"
 	"testing"
 )
 
@@ -25,7 +24,7 @@ func TestGenSharedKeys(t *testing.T) {
 	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	privHop, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	pubHop := privHop.Public().(*ecdsa.PublicKey)
-	circuitPubKeys = append(circuitPubKeys, pubHop)
+	circuitPubKeys[0] = pubHop
 
 	// generateSharedSecrets
 	sk, err := generateSharedSecrets(circuitPubKeys, *privSender)
@@ -33,5 +32,5 @@ func TestGenSharedKeys(t *testing.T) {
 		t.Error(err)
 	}
 
-	log.Println(sk)
+	t.Error(sk)
 }
