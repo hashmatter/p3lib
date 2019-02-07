@@ -5,7 +5,7 @@ import (
 	"crypto/ecdsa"
 	ec "crypto/elliptic"
 	"errors"
-	scrypto "github.com/gpestana/p3lib/p3lib-sphinx/crypto"
+	scrypto "github.com/hashmatter/p3lib/p3lib-sphinx/crypto"
 	"math/big"
 )
 
@@ -125,7 +125,7 @@ func deriveGroupElementPair(privElement big.Int, blindingF scrypto.Hash256, curv
 // function is more efficient and suitable for relays
 func blindGroupElement(el *ecdsa.PublicKey, blindingF []byte, curve ec.Curve) *ecdsa.PublicKey {
 	newX, newY := curve.Params().ScalarMult(el.X, el.Y, blindingF)
-	return &ecdsa.PublicKey{curve, newX, newY}
+	return &ecdsa.PublicKey{Curve: curve, X: newX, Y: newY}
 }
 
 func copyPublicKey(pk *ecdsa.PublicKey) *ecdsa.PublicKey {
