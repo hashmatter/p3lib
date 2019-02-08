@@ -6,6 +6,7 @@ import (
 	ec "crypto/elliptic"
 	"errors"
 	scrypto "github.com/hashmatter/p3lib/p3lib-sphinx/crypto"
+	"io"
 	"math/big"
 )
 
@@ -17,36 +18,56 @@ const (
 	// NumMaxHops is the maximum circuit length. All packets must have NumMaxHops
 	// hop information
 	NumMaxHops = 15
+
+	version = 1
 )
 
-type peerRoutingInfo struct{}
-
-// A sphinx packet wraps the encrypted layers for each of the relays to decrypt and
-// retrieve routing data necessary to forward the packet to the next relay. The
-// packet does not leak information about the identity of previous and next
-// relays and position of the relay in the path. The source node and each of the
-// relays perform ECDH to derive a secret key which is used to 1) verify the MAC of
-// the header; 2) decrypt the set of routing information needed by the relay and 3)
-// shuffle the ephemeral key for the next hop.
 type Packet struct {
 	Version byte
-
-	// public key used by each realyer together with its private key to derive the
-	// shared secret key used to check the integrity of the packet (with HMAC) and
-	// decrypt the routing information
-	EphemeralKey crypto.PublicKey
-
-	// arbitrary metadata accessible by any relayer (unencrypted)
-	Metadata []byte
-
-	// list of addresses and public keys of relayers that will construct the
-	// secure communication channel. The order in the slice maps to the order in
-	// the circuit. This data MUST be private and not encoded (TODO: remove from here?)
-	routingInfo []peerRoutingInfo
+	Header
+	Payload []byte
 }
 
-func New() *Packet {
-	return &Packet{}
+func NewPacket(circuitPubKeys []crypto.PublicKey, payload []byte) (*Packet, error) {
+	if len(circuitPubKeys) == 0 {
+		return &Packet{}, errors.New("Err: A set of relay pulic keys must be provided")
+	}
+
+	header := Header{}
+
+	return &Packet{
+		Version: version,
+		Header:  header,
+		Payload: payload,
+	}, nil
+}
+
+// TODO
+// encodes packet in binary form into a io.Writer, which can be sent over the
+// network
+func (p *Packet) Encode(w io.Writer) error {
+	if _, err := w.Write([]byte{p.Version}); err != nil {
+		return err
+	}
+	//if _, err := w.Write(p.Header); err != nil {
+	//	return err
+	//}
+	if _, err := w.Write(p.Payload); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TODO
+// decodes packet in binary format into an instace of Packet
+func (f *Packet) Decode(r io.Reader) error {
+	return nil
+}
+
+type Header struct {
+	GroupElement crypto.PublicKey
+	Payload      []byte
+	HMAC         []byte
 }
 
 // generates all shared secrets for a given path.

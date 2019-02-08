@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/ecdsa"
 	ec "crypto/elliptic"
+	"crypto/hmac"
 	"crypto/sha256"
 )
 
@@ -42,4 +43,20 @@ func serializePubKey(pub *ecdsa.PublicKey) []byte {
 
 func GetCurve(priv ecdsa.PrivateKey) ec.Curve {
 	return priv.PublicKey.Curve
+}
+
+// computes HMAC-SHA-256
+func ComputeMAC(key Hash256, message []byte) []byte {
+	mac := hmac.New(sha256.New, key[:])
+	mac.Write(message)
+	return mac.Sum(nil)
+}
+
+// checks HMAC-SHA-256
+func CheckMAC(message, messageMAC, key []byte) bool {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(message)
+	expectedMAC := mac.Sum(nil)
+	return hmac.Equal(messageMAC, expectedMAC)
+
 }

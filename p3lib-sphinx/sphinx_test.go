@@ -12,7 +12,15 @@ import (
 )
 
 func TestNewPacket(t *testing.T) {
-	p := New()
+	circuitPubKeys := make([]crypto.PublicKey, 1)
+	_, pub := ecdsa.GenerateKey(ec.P256(), rand.Reader)
+	circuitPubKeys = append(circuitPubKeys, pub)
+	payload := []byte("hello sphinx")
+
+	p, err := NewPacket(circuitPubKeys, payload)
+	if err != nil {
+		t.Error(err)
+	}
 	if p == nil {
 		t.Error("NewPacket_Test: packet not correctly constructed")
 	}
