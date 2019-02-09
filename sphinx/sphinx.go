@@ -1,12 +1,14 @@
 package sphinx
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	ec "crypto/elliptic"
+	"encoding/gob"
 	"errors"
-	scrypto "github.com/hashmatter/p3lib/p3lib-sphinx/crypto"
-	"io"
+	"fmt"
+	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
 	"math/big"
 )
 
@@ -25,15 +27,18 @@ const (
 type Packet struct {
 	Version byte
 	Header
-	Payload []byte
+	Payload   []byte
+	HeaderMAC []byte
 }
 
-func NewPacket(circuitPubKeys []crypto.PublicKey, payload []byte) (*Packet, error) {
+func NewPacket(groupElement crypto.PublicKey, circuitPubKeys []crypto.PublicKey, payload []byte) (*Packet, error) {
 	if len(circuitPubKeys) == 0 {
 		return &Packet{}, errors.New("Err: A set of relay pulic keys must be provided")
 	}
 
-	header := Header{}
+	header := Header{
+		GroupElement: groupElement,
+	}
 
 	return &Packet{
 		Version: version,
@@ -42,32 +47,65 @@ func NewPacket(circuitPubKeys []crypto.PublicKey, payload []byte) (*Packet, erro
 	}, nil
 }
 
-// TODO
-// encodes packet in binary form into a io.Writer, which can be sent over the
-// network
-func (p *Packet) Encode(w io.Writer) error {
-	if _, err := w.Write([]byte{p.Version}); err != nil {
-		return err
-	}
-	//if _, err := w.Write(p.Header); err != nil {
-	//	return err
-	//}
-	if _, err := w.Write(p.Payload); err != nil {
-		return err
-	}
-	return nil
-}
-
-// TODO
-// decodes packet in binary format into an instace of Packet
-func (f *Packet) Decode(r io.Reader) error {
-	return nil
-}
-
 type Header struct {
 	GroupElement crypto.PublicKey
+	PayloadMac   []byte
 	Payload      []byte
-	HMAC         []byte
+}
+
+func newHeader(ge crypto.PublicKey, payload []byte) *Header {
+	return &Header{
+		GroupElement: ge,
+		Payload:      payload,
+	}
+}
+
+// returns HMAC-SHA-256 of the header
+func (h *Header) Mac(key scrypto.Hash256) []byte {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	enc.Encode(h)
+	return buf.Bytes()
+}
+
+type H struct {
+	Ge []byte
+	Pd []byte
+}
+
+func (h *Header) GobEncode() ([]byte, error) {
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+
+	pk := h.GroupElement.(*ecdsa.PublicKey)
+	element := ec.Marshal(pk.Curve, pk.X, pk.Y)
+	err := enc.Encode(H{Ge: element, Pd: h.Payload})
+	if err != nil {
+		return nil, fmt.Errorf("Err encoding header: %s", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func (h *Header) GobDecode(raw []byte) error {
+	r := bytes.NewReader(raw)
+	dec := gob.NewDecoder(r)
+
+	var hb H
+	err := dec.Decode(&hb)
+	if err != nil {
+		return fmt.Errorf("Err decoding header: %s", err)
+	}
+
+	// TODO: parameterize this to allow for diff curves
+	curve := ec.P256()
+	x, y := ec.Unmarshal(curve, hb.Ge)
+	// if x coordinate is (big.Int) 0, the curves do not match
+	if x == big.NewInt(0) {
+		return fmt.Errorf("Err decoding header: group element not using %s curve.", curve.Params().Name)
+	}
+	h.GroupElement = ecdsa.PublicKey{Curve: curve, X: x, Y: y}
+	h.Payload = hb.Pd
+	return nil
 }
 
 // generates all shared secrets for a given path.

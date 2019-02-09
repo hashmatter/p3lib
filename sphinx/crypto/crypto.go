@@ -5,6 +5,8 @@ import (
 	ec "crypto/elliptic"
 	"crypto/hmac"
 	"crypto/sha256"
+	"fmt"
+	chacha20 "golang.org/x/crypto/chacha20poly1305"
 )
 
 // TODO: initially, this implementation is using SHA256 as hashing function.
@@ -53,10 +55,38 @@ func ComputeMAC(key Hash256, message []byte) []byte {
 }
 
 // checks HMAC-SHA-256
-func CheckMAC(message, messageMAC, key []byte) bool {
-	mac := hmac.New(sha256.New, key)
+func CheckMAC(message, messageMAC []byte, key Hash256) bool {
+	mac := hmac.New(sha256.New, key[:])
 	mac.Write(message)
 	expectedMAC := mac.Sum(nil)
 	return hmac.Equal(messageMAC, expectedMAC)
+}
 
+// encrypts payload with ChaCha20. the nonce is received in the function
+// argument but should be []byte{x00...}. this is safe since the encryption
+// with the key is done only once. TODO: generalize for other ciphers.
+func EncryptChaCha20(msg, key, nonce []byte) ([]byte, error) {
+	aead, err := chacha20.NewX(key)
+	if err != nil {
+		return []byte{}, fmt.Errorf("Err: encryption has failed. %v", err)
+	}
+
+	return aead.Seal(nil, nonce, msg, nil), nil
+}
+
+// decrypts payload with ChaCha20. the nonce is received in the function
+// argument but should be []byte{x00...}. this is safe since the encryption
+// with the key is done only once. TODO: generalize for other ciphers
+func DecryptChaCha20(ciphertext, key, nonce []byte) ([]byte, error) {
+	aead, err := chacha20.NewX(key)
+	if err != nil {
+		return []byte{}, fmt.Errorf("Err: decryption has failed. %v", err)
+	}
+
+	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return []byte{}, fmt.Errorf("Err: decryption has failed. %v", err)
+	}
+
+	return plaintext, nil
 }

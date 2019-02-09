@@ -1,12 +1,14 @@
 package sphinx
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	ec "crypto/elliptic"
 	"crypto/rand"
+	"encoding/gob"
 	"fmt"
-	scrypto "github.com/hashmatter/p3lib/p3lib-sphinx/crypto"
+	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
 	"math/big"
 	"testing"
 )
@@ -17,7 +19,7 @@ func TestNewPacket(t *testing.T) {
 	circuitPubKeys = append(circuitPubKeys, pub)
 	payload := []byte("hello sphinx")
 
-	p, err := NewPacket(circuitPubKeys, payload)
+	p, err := NewPacket(pub, circuitPubKeys, payload)
 	if err != nil {
 		t.Error(err)
 	}
@@ -75,6 +77,53 @@ func TestGenSharedKeys(t *testing.T) {
 	}
 }
 
+// TODO
+func TestEncodingDecodingPacket(t *testing.T) {}
+
+func TestEncodingDecodingHeader(t *testing.T) {
+	pub, _ := generateHopKeys()
+	hp := []byte("header payload")
+	header := newHeader(pub, hp)
+
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	dec := gob.NewDecoder(&buf)
+
+	err := enc.Encode(header)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var headerAfter Header
+	err = dec.Decode(&headerAfter)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if string(header.Payload) != string(headerAfter.Payload) {
+		t.Error(fmt.Printf("Original and encoded/decoded header payload mismatch:\n >> %v \n >> %v\n",
+			string(header.Payload), string(headerAfter.Payload)))
+	}
+
+	hGe := header.GroupElement.(*ecdsa.PublicKey)
+	haGe := headerAfter.GroupElement.(ecdsa.PublicKey)
+
+	if hGe.Curve.Params().Name != haGe.Curve.Params().Name {
+		t.Error(fmt.Printf("Original and encoded/decoded group elements mismatch:\n >> %v \n >> %v\n",
+			hGe.Curve.Params().Name, haGe.Curve.Params().Name))
+	}
+
+	var diff big.Int
+	diff.Sub(hGe.X, haGe.X)
+	if diff.Cmp(big.NewInt(0)) != 0 {
+		t.Error(fmt.Printf("Original and encoded/decoded group elements mismatch:\n >> %v \n >> %v\n",
+			hGe.X, haGe.X))
+	}
+}
+
+// helpers
 func generateHopKeys() (*ecdsa.PublicKey, *ecdsa.PrivateKey) {
 	privHop, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	pubHop := privHop.Public().(*ecdsa.PublicKey)
