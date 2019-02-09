@@ -2,11 +2,12 @@ all: test-all
 ci: pre-build test
 
 pre-build:
-	go get ./p3lib-sphinx
+	go get ./sphinx
+	go get ./sphinx/crypto
 
 test-all:
 	make test-sphinx
 
 test-sphinx: 
-	go vet ./p3lib-sphinx
-	go test ./p3lib-sphinx/... -cover
+	go vet ./sphinx
+	go test ./sphinx/... -cover

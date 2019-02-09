@@ -18,8 +18,8 @@ func TestGenerateECDHSharedSecret(t *testing.T) {
 	privAlice, _ := ecdsa.GenerateKey(curve, r)
 	pubAlice := privAlice.Public().(*ecdsa.PublicKey)
 
-	sBob, _ := GenerateECDHSharedSecret(pubAlice, privBob)
-	sAlice, _ := GenerateECDHSharedSecret(pubBob, privAlice)
+	sBob := GenerateECDHSharedSecret(pubAlice, privBob)
+	sAlice := GenerateECDHSharedSecret(pubBob, privAlice)
 
 	if sBob != sAlice {
 		t.Error(fmt.Printf("symmetric shared keys are not the same %v %v", sBob, sAlice))
