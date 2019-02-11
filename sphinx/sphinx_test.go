@@ -17,9 +17,11 @@ func TestNewPacket(t *testing.T) {
 	circuitPubKeys := make([]crypto.PublicKey, 1)
 	_, pub := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	circuitPubKeys = append(circuitPubKeys, pub)
-	payload := []byte("hello sphinx")
+	routingInfo := [ROUTING_INFO_SIZE]byte{}
+	rInfoDummy := "pretend this is an IP"
+	copy(routingInfo[:], rInfoDummy)
 
-	p, err := NewPacket(pub, circuitPubKeys, payload)
+	p, err := NewPacket(pub, circuitPubKeys, routingInfo)
 	if err != nil {
 		t.Error(err)
 	}
@@ -49,6 +51,9 @@ func TestGenSharedKeys(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	e := ec.Marshal(pubSender.Curve, pubSender.X, pubSender.Y)
+	t.Error(e, len(e), pubSender.X.BitLen(), pubSender.Y.BitLen())
 
 	// if shared keys were properly generated, the 1st hop must be able to 1)
 	// generate shared key and 2) blind group element. The 2rd hop must be able to
@@ -83,7 +88,7 @@ func TestEncodingDecodingPacket(t *testing.T) {}
 func TestEncodingDecodingHeader(t *testing.T) {
 	pub, _ := generateHopKeys()
 	hp := []byte("header payload")
-	header := newHeader(pub, hp)
+	header := &Header{Payload: hp, GroupElement: pub}
 
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)

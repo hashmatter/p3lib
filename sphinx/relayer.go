@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
+	"net"
 )
 
 const (
@@ -18,7 +19,7 @@ type RelayerCtx struct {
 
 type NextHop struct {
 	Packet
-	RoutingInfo []byte // []byte for now, how to represent it?
+	RoutingInfo net.Addr
 }
 
 func NewRelayerCtx(privKey *ecdsa.PrivateKey) *RelayerCtx {
@@ -40,6 +41,9 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 	gElement := header.GroupElement.(*ecdsa.PublicKey)
 	sKey := scrypto.GenerateECDHSharedSecret(gElement, r.privKey)
 
+	// TODO: first verify if group element is part of the curve. this is very
+	// important to avoid twist security attacks
+
 	// checks if packet has been processed based on the derived secret key
 	tag := sha256.Sum256([]byte(sKey[:]))
 	if contains(r.processedTags, tag) {
@@ -53,12 +57,15 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 	hmac := scrypto.ComputeMAC(sKey, header.Payload)
 	valid := scrypto.CheckMAC(header.Payload, hmac, sKey)
 	if valid == false {
-		return &NextHop{}, []byte{}, fmt.Errorf("Header MAC not valid with secret key derived")
+		return &NextHop{}, []byte{}, fmt.Errorf("Header MAC not valid for derived shared secret. Aborting packet processing.")
 	}
 
+	// adds padding (x000) before decrypting
+
 	// decrypts header payload using the derived shared key
-	// note: it is safe to use always the same nonce for encryptio because the
-	// key is used only once
+	// note: it is safe to use always the same nonce for encryption side since
+	// the shared key is used only once (TODO: is this true? how about re-building
+	// circuits?)
 	nonce := []byte{defaultNonceValue}
 	plainPayload, err := scrypto.DecryptChaCha20(header.Payload, sKey[:], nonce)
 	if err != nil {
@@ -66,7 +73,13 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 	}
 
 	fmt.Println(plainPayload)
+
 	// blinds group element for next hop
+	newElement := scrypto.ComputeBlindingFactor(gElement, sKey)
+
+	// finally, put together all necessary bits to forward to next relay, namely
+	// the packet itself and the routing information
+	next.Packet.GroupElement = newElement
 
 	return &next, finalPayload, nil
 }

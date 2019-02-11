@@ -2,22 +2,64 @@
 
 `p3lib-sphinx` implements the sphinx packet format as defined by [1]. This
 package implements the data structures and primitives for creating, relaying and
-verifying sphinx packets. The first version of the package is highly inspired on
-the Sphinx onion routing implementation by Lightning Network [2].
-
-A sphinx packet encapsulates information to cryptographically secure and verify
-integrity of the channel at each relay. Ephemeral keys are distributed between
-the packet sender and the relays, so that relays can decode and access their 
-routing information and message payload. Sphinx use Diffie-Hellman for key
-distribution.
+verifying sphinx packets for onion routing and mix-networks. The first version
+(v0.1) of the package is highly inspired on the Sphinx onion routing 
+implementation by Lightning Network routing protocol [2].
 
 ## Protocol overview
 
-## Data structures
+## Onion packet and header
 
-> To finish
+An onion packet contains the `version` of the packet, an `header` containing 
+information for the relay to generate shared keys and, if that is the case, 
+blinded data for next relays. It also contains `routing info` with the necessary
+information to route the packet for the next relay and, finally, the HMAC of the
+packet's header, used for integrity verification.
 
-### A. Packet format
+The size of the `header` must be invariant throughout the circuit so that its
+position in the circuit is not leaked. The size of the `header` depends on the
+max. number of relays allowed for each circuit and the size of the keys.
+
+*Notes on defaults: current version of p3lib-sphinx (v0.1) sets sensible and
+secure defaults for the ECC curve, key sizes and max. number or relays. this
+will change in the future to allow more flexibility to developers to bing their
+own crypto and adapt to their application needs*
+
+### Header
+
+An header contains a `group_element` and a `payload`. The `group_element` is  sender's
+blinded public key and a `payload` is the header's payload with the information
+for the next relay. 
+The size of the `header` must be invariant and deterministic depending on the
+cryptography defaults and it is calculated by the formula:
+
+```
+  size_header = p + (2 * r * k)     where,
+
+ p: size of the public key (bytes)
+ r: max number of hops
+ k: security parameter, ie. size of symmetric key (bytes) 
+```
+
+For version `v0.1`, the size of an header is `33 + (2 * 5 * 16) = 193` bytes
+
+
+```
+Header:
+
++---------------+---------------------------+
+| Group Element |          Payload          |
++---------------+---------------------------+
+| pub_key       | enc(payload_relay_1, sk1) |
+|               | enc(payload_relay_2, sk2) |
+|               | enc(payload_relay_3, sk3) |
+|               | enc(payload_relay_4, sk4) |
+|               | enc(payload_relay_5, sk5) |
++---------------+---------------------------+
+```
+
+
+### Packet
 
 A sphinx packet wraps the encrypted layers for each of the relays to decrypt and
 retrieve routing data necessary to forward the packet to the next relay. The
@@ -27,14 +69,43 @@ relays perform ECDH to derive a secret key which is used to 1) verify the MAC of
 the header; 2) decrypt the set of routing information needed by the relay and 3)
 shuffle the ephemeral key for the next hop.
 
-A sphinx packet contains the following fields:
+A packet encapsulates both the `header` and the message `payload`. Both `header`
+and `paylaod` must be invariant in length, so that colluding relays cannot link 
+packets across the circuit. A packet also contains a `version`, `routing_info`
+and `header_hmac`. The size of the packet is the sum of the size of those
+fields:
 
-- `Version (byte)` version of the packet. All versions should be backwards
-compatible. Current supported version are `[1]`.
-- `EphemeralKey (crypto.PublicKey)` used by the relays in combination with the 
-private key derived in the ECDH process. 
-- `RoutingInfo (routingData)` encodes all the routing info for the relay and hops.
-- `HeaderMAC ([]uint8)` HMAC of the packet header.
+```
+  size_packet = size_header + size_version + size_routing_info + size_payload
+
+	 where
+
+  size_routing_info = r * (address_size + header_hmac_size)
+```
+
+An `address` contains an IPv4 or IPv6 address (16 bytes) and an unique ID for
+the communication protocol (1 byte). The `header_hmac` is the HMAC of each of
+the headers computed by the hash function `SHA256-MAC-128`.
+
+For version `v0.1`, the size of the routing info is `5 * (17 + 32) = 245` bytes.
+A packet payload has a fixed lenght of 256 bytes.
+
+A sphinx packet is  `193 + 1 + 245 + 256 = 695` bytes long. This means that for
+each 256 bytes transmitted, there is an overhead of 450 bytes.
+
+```
+Packet:
+
++--------+------------+------------------+---------+---------+
+| Header | Header MAC |   Routing Info   | Version | Payload |
++--------+------------+------------------+---------+---------+
+|        | hmac_1     | addr_relay_2     |         |         |
+|        | hmac_2     | addr_relay_3     |         |         |
+|        | hmac_3     | addr_relay_4     |         |         |
+|        | hmac_4     | addr_relay_5     |         |         |
+|        | hmac_5     | final_addr       |         |         |
++--------+------------+------------------+---------+---------+
+```
 
 ## Cryptography
 

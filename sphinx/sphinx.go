@@ -10,28 +10,53 @@ import (
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
 	"math/big"
+	"net"
 )
 
+// TODO: in the future, allow for more number of hops. when that is the case,
+// migrate these constants into configurations with sensible defaults
 const (
-	// security parameter
-	sec_k    = 128
-	hmacSize = 32
 
-	// NumMaxHops is the maximum circuit length. All packets must have NumMaxHops
-	// hop information
-	NumMaxHops = 15
+	// security parameter in bytes, defines the length of the symmetric key.
+	SEC_K = 16
 
-	version = 1
+	// size in bytes of address of relays and destination
+	HMAC_SIZE = 32
+
+	// size in bytes of MAC used to verify integrity of packet
+	ADDR_SIZE = 32
+
+	// max number of hops per circuit
+	NUM_MAX_HOPS = 5
+
+	HOP_DATA_SIZE = (ADDR_SIZE + HMAC_SIZE)
+
+	// size in bytes for each routing info segment. each segment must be invariant
+	// regardless the relay position in the circuit
+	ROUTING_INFO_SIZE = NUM_MAX_HOPS * HOP_DATA_SIZE
+
+	// size in bytes produced by PRG when encrypting and decrypting mix header
+	NUM_STREAM_BYTES = ROUTING_INFO_SIZE + HOP_DATA_SIZE
+
+	// size in bytes of shared secret
+	SHARED_SECRET_SIZE = 32
+
+	// size in bytes of the realm identifier. a real identifier can be any metadata
+	// associeated with the version of the protocol used and us application
+	// specific (ie. any developer can define the real version). The realm byte
+	// mnust be padded with x0 up to REAL_SIZE
+	REALM_SIZE    = 1
+	DEFAULT_REALM = byte(1)
 )
 
 type Packet struct {
 	Version byte
 	Header
-	Payload   []byte
-	HeaderMAC []byte
+	RoutingInfo [ROUTING_INFO_SIZE]byte
+	HeaderMAC   [HMAC_SIZE]byte
 }
 
-func NewPacket(groupElement crypto.PublicKey, circuitPubKeys []crypto.PublicKey, payload []byte) (*Packet, error) {
+func NewPacket(groupElement crypto.PublicKey, circuitPubKeys []crypto.PublicKey, routingInfo [ROUTING_INFO_SIZE]byte) (*Packet, error) {
 	if len(circuitPubKeys) == 0 {
 		return &Packet{}, errors.New("Err: A set of relay pulic keys must be provided")
 	}
@@ -41,23 +66,45 @@ func NewPacket(groupElement crypto.PublicKey, circuitPubKeys []crypto.PublicKey,
 	}
 
 	return &Packet{
-		Version: version,
-		Header:  header,
-		Payload: payload,
+		Version:     DEFAULT_REALM,
+		Header:      header,
+		RoutingInfo: routingInfo,
 	}, nil
 }
 
 type Header struct {
 	GroupElement crypto.PublicKey
-	PayloadMac   []byte
 	Payload      []byte
 }
 
-func newHeader(ge crypto.PublicKey, payload []byte) *Header {
-	return &Header{
-		GroupElement: ge,
-		Payload:      payload,
+func newHeader(gElement crypto.PublicKey, addr net.Addr,
+	circuitPubKeys []crypto.PublicKey) (*Header, error) {
+	var header Header
+
+	sKeys, err := generateSharedSecrets(circuitPubKeys, gElement.(ecdsa.PrivateKey))
+	if err != nil {
+		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
+
+	fillers := generateFillers(sKeys)
+	fmt.Println(fillers)
+
+	numHops := len(sKeys)
+	for i := numHops - 1; i < 0; i-- {
+
+	}
+
+	return &header, nil
+}
+
+func generateFillers(keys []scrypto.Hash256) [][]byte {
+	var fillers [][]byte
+	for i, k := range keys {
+		key := k[:]
+		numBits := 2 * (i + 1) * SEC_K
+		fmt.Println(numBits, key)
+	}
+	return fillers
 }
 
 // returns HMAC-SHA-256 of the header
@@ -153,7 +200,7 @@ func generateSharedSecrets(circuitPubKeys []crypto.PublicKey,
 		blindedPrivateKey := ecdsa.PrivateKey{
 			PublicKey: *newGroupElement,
 			D:         privElement,
-		} // is this correct??
+		}
 		sharedSecret = scrypto.GenerateECDHSharedSecret(currentHopPubKey, &blindedPrivateKey)
 
 		sharedSecrets[i] = sharedSecret
