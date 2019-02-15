@@ -54,8 +54,12 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 
 	// computes HMAC of the header payload with the derived key and checks if it
 	// coincides with the header's HMAC
-	hmac := scrypto.ComputeMAC(sKey, header.Payload)
-	valid := scrypto.CheckMAC(header.Payload, hmac, sKey)
+	encodedHeader, err := header.GobEncode()
+	if err != nil {
+		return &NextHop{}, []byte{}, fmt.Errorf("Encoding header: %v", err)
+	}
+	hmac := scrypto.ComputeMAC(sKey, encodedHeader)
+	valid := scrypto.CheckMAC(encodedHeader, hmac, sKey)
 	if valid == false {
 		return &NextHop{}, []byte{}, fmt.Errorf("Header MAC not valid for derived shared secret. Aborting packet processing.")
 	}
@@ -66,13 +70,6 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 	// note: it is safe to use always the same nonce for encryption side since
 	// the shared key is used only once (TODO: is this true? how about re-building
 	// circuits?)
-	nonce := []byte{defaultNonceValue}
-	plainPayload, err := scrypto.DecryptChaCha20(header.Payload, sKey[:], nonce)
-	if err != nil {
-		return &NextHop{}, []byte{}, err
-	}
-
-	fmt.Println(plainPayload)
 
 	// blinds group element for next hop
 	newElement := scrypto.ComputeBlindingFactor(gElement, sKey)
