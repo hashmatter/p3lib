@@ -23,8 +23,9 @@ const (
 	// size in bytes of MAC used to verify integrity of packet
 	hmacSize = 32
 
-	// size in bytes of address of relays and destination
-	addrSize = 32
+	// size in bytes of address of relays and final destination. 16 bytes for IP
+	// address (if IPv4, then 4 bytes + padding) and 1 byte for transport
+	addrSize = 17
 
 	// size in bytes of the encoded group element (1 + 2*curve_bit_size). this
 	// const is for P256
@@ -33,7 +34,8 @@ const (
 	// max number of hops per circuit
 	numMaxRelays = 5
 
-	relayDataSize = (addrSize + hmacSize)
+	// size in bytes of the next address (n) and size of the hash of the packet (y)
+	relayDataSize = addrSize + hmacSize
 
 	// size in bytes for each routing info segment. each segment must be invariant
 	// regardless the relay position in the circuit
@@ -52,7 +54,6 @@ const (
 	// mnust be padded with x0 up to REAL_SIZE
 	realmSize = 1
 	defRealm  = byte(1)
-	defNonce  = "0"
 )
 
 type Packet struct {
@@ -92,10 +93,13 @@ func newHeader(gElement crypto.PublicKey, addr net.Addr,
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
 
-	padding, err := generatePadding(sKeys, []byte(defNonce))
+	//TODO: default nonce?
+	nonce := make([]byte, 25)
+	padding, err := generatePadding(sKeys, nonce)
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
+
 	fmt.Println(padding)
 
 	numHops := len(sKeys)
@@ -106,22 +110,28 @@ func newHeader(gElement crypto.PublicKey, addr net.Addr,
 	return &header, nil
 }
 
-// generates the padding which is used to keep the header lenght invariant along
-// the circuit.
 func generatePadding(keys []scrypto.Hash256, nonce []byte) ([]byte, error) {
-	paddingSize := (numMaxRelays - 1) * relayDataSize
-	padding := make([]byte, paddingSize)
+	numRelays := len(keys)
 
-	for i := 1; i < len(keys); i++ {
+	if numRelays > numMaxRelays {
+		return []byte{}, fmt.Errorf("Maximum number of relays is %v, got %v",
+			numMaxRelays, len(keys))
+	}
+
+	var padding []byte
+
+	for i := 1; i < numRelays; i++ {
+		filler := make([]byte, relayDataSize)
+		padding = append(padding, filler...)
+
 		key := generateEncryptionKey(keys[i-1][:])
 		stream, err := scrypto.GenerateCipherStream(key, nonce, streamSize)
 		if err != nil {
 			return []byte{}, err
 		}
-
-		xor(padding, padding, stream[len(stream)-relayDataSize:])
+		// xor padding with last |padding| bytes of stream data
+		xor(padding, padding, stream[len(stream)-i*relayDataSize:])
 	}
-
 	return padding, nil
 }
 

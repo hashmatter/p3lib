@@ -33,14 +33,14 @@ func TestNewPacket(t *testing.T) {
 func TestGenSharedKeys(t *testing.T) {
 	// setup
 	curve := ec.P256()
-	numHops := 2
-	circuitPubKeys := make([]crypto.PublicKey, numHops)
-	circuitPrivKeys := make([]crypto.PublicKey, numHops)
+	numRelays := 2
+	circuitPubKeys := make([]crypto.PublicKey, numRelays)
+	circuitPrivKeys := make([]crypto.PublicKey, numRelays)
 
 	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	pubSender := privSender.PublicKey
 
-	for i := 0; i < numHops; i++ {
+	for i := 0; i < numRelays; i++ {
 		pub, priv := generateHopKeys()
 		circuitPrivKeys[i] = priv
 		circuitPubKeys[i] = pub
@@ -128,6 +128,41 @@ func TestEncodingDecodingHeader(t *testing.T) {
 		t.Error(fmt.Printf("Original and encoded/decoded group elements mismatch:\n >> %v \n >> %v\n",
 			hGe.X, haGe.X))
 	}
+}
+
+func TestPaddingGeneration(t *testing.T) {
+	numRelays := 3
+	circuitPubKeys := make([]crypto.PublicKey, numRelays)
+	circuitPrivKeys := make([]crypto.PublicKey, numRelays)
+
+	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
+
+	for i := 0; i < numRelays; i++ {
+		pub, priv := generateHopKeys()
+		circuitPrivKeys[i] = priv
+		circuitPubKeys[i] = pub
+	}
+
+	// generateSharedSecrets
+	sharedKeys, err := generateSharedSecrets(circuitPubKeys, *privSender)
+	if err != nil {
+		t.Error(err)
+	}
+
+	nonce := make([]byte, 24)
+	padding, err := generatePadding(sharedKeys, nonce)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expPaddingLen := (numRelays - 1) * relayDataSize
+	if len(padding) != expPaddingLen {
+		t.Error(fmt.Printf("Final padding should have lenght of |(numRelays - 1) * relaysDataSize| (%v), got %v", expPaddingLen, len(padding)))
+	}
+
+	// relay 3 removes one layer of encryption
+	// relay 1 removes another layer of encryption
+	// final padding must be all 0s
 }
 
 // helpers
