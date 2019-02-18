@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
+	ma "github.com/multiformats/go-multiaddr"
 	"math/big"
-	"net"
 )
 
 // TODO: in the future, allow for more number of hops. when that is the case,
@@ -18,93 +18,170 @@ import (
 const (
 
 	// security parameter in bytes, defines the length of the symmetric key.
-	SEC_K = 16
-
-	// size in bytes of address of relays and destination
-	HMAC_SIZE = 32
+	secK = 16
 
 	// size in bytes of MAC used to verify integrity of packet
-	ADDR_SIZE = 32
+	hmacSize = 32
+
+	// size in bytes of address of relays and final destination. 16 bytes for IP
+	// address (if IPv4, then 4 bytes + padding), 1 byte for signalling ip
+	// protocol (ip4 or ip6), 1 byte for transport protocol and 2 bytes for
+	// optional port
+	addrSize = 21
+
+	// size in bytes of the encoded group element (1 + 2*curve_bit_size). this
+	// const is for P256
+	groupElementSize = 513
 
 	// max number of hops per circuit
-	NUM_MAX_HOPS = 5
+	numMaxRelays = 5
 
-	HOP_DATA_SIZE = (ADDR_SIZE + HMAC_SIZE)
+	// size in bytes of the next address (n) and size of the hash of the packet (y)
+	relayDataSize = addrSize + hmacSize
 
 	// size in bytes for each routing info segment. each segment must be invariant
 	// regardless the relay position in the circuit
-	ROUTING_INFO_SIZE = NUM_MAX_HOPS * HOP_DATA_SIZE
+	routingInfoSize = numMaxRelays * relayDataSize
 
-	// size in bytes produced by PRG when encrypting and decrypting mix header
-	NUM_STREAM_BYTES = ROUTING_INFO_SIZE + HOP_DATA_SIZE
+	// size in bytes of the output of the stream cipher. the output is used to
+	// encrypt the header, as well as create the header padding
+	streamSize = routingInfoSize + relayDataSize
 
 	// size in bytes of shared secret
-	SHARED_SECRET_SIZE = 32
+	sharedSecretSize = 32
 
 	// size in bytes of the realm identifier. a real identifier can be any metadata
 	// associeated with the version of the protocol used and us application
 	// specific (ie. any developer can define the real version). The realm byte
 	// mnust be padded with x0 up to REAL_SIZE
-	REALM_SIZE    = 1
-	DEFAULT_REALM = byte(1)
+	realmSize = 1
+	defRealm  = byte(1)
 )
 
 type Packet struct {
 	Version byte
 	Header
-	RoutingInfo [ROUTING_INFO_SIZE]byte
-	HeaderMAC   [HMAC_SIZE]byte
+	Payload []byte
 }
 
-func NewPacket(groupElement crypto.PublicKey, circuitPubKeys []crypto.PublicKey, routingInfo [ROUTING_INFO_SIZE]byte) (*Packet, error) {
+func NewPacket(groupElement crypto.PublicKey, circuitPubKeys []crypto.PublicKey, routingInfo [routingInfoSize]byte) (*Packet, error) {
 	if len(circuitPubKeys) == 0 {
 		return &Packet{}, errors.New("Err: A set of relay pulic keys must be provided")
 	}
 
 	header := Header{
 		GroupElement: groupElement,
+		RoutingInfo:  routingInfo,
 	}
 
 	return &Packet{
-		Version:     DEFAULT_REALM,
-		Header:      header,
-		RoutingInfo: routingInfo,
+		Version: defRealm,
+		Header:  header,
 	}, nil
 }
 
 type Header struct {
 	GroupElement crypto.PublicKey
-	Payload      []byte
+	RoutingInfo  [routingInfoSize]byte
+	HeaderMac    [hmacSize]byte
 }
 
-func newHeader(gElement crypto.PublicKey, addr net.Addr,
-	circuitPubKeys []crypto.PublicKey) (*Header, error) {
+func newHeader(gElement crypto.PublicKey, ad ma.Multiaddr,
+	circuitAddrs []ma.Multiaddr, circuitPubKeys []crypto.PublicKey) (*Header, error) {
 	var header Header
+
+	numRelays := len(circuitPubKeys)
+	if numRelays > numMaxRelays {
+		return &Header{}, fmt.Errorf("Maximum number of relays is %v, got %v",
+			numMaxRelays, numRelays)
+	}
+
+	if len(ad.Bytes()) > addrSize {
+		return &Header{}, fmt.Errorf("Max. size final address is 21 bytes, got %v",
+			len(ad.Bytes()))
+	}
+
+	// TODO: verify also if circuit addresses are 1) valid and 2) same size as
+	// circtuiPubkeys (maybe use dictionary?)
 
 	sKeys, err := generateSharedSecrets(circuitPubKeys, gElement.(ecdsa.PrivateKey))
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
 
-	fillers := generateFillers(sKeys)
-	fmt.Println(fillers)
+	//TODO: default nonce?
+	nonce := make([]byte, 25)
+	padding, err := generatePadding(sKeys, nonce)
+	if err != nil {
+		return &Header{}, fmt.Errorf("Header construction: %v", err)
+	}
 
-	numHops := len(sKeys)
-	for i := numHops - 1; i < 0; i-- {
+	addr := make([]byte, relayDataSize)
+	copy(addr, ad.Bytes())
 
+	// prepares core of the onion routing packet to be decrypted by last relay
+	// before forwarding to final destination.
+	key := generateEncryptionKey(sKeys[(len(sKeys) - 1)][:])
+	stream, err := scrypto.GenerateCipherStream(key, nonce, streamSize)
+	if err != nil {
+		return &Header{}, err
+	}
+	xor(addr, addr, stream)
+	beta := append(addr, padding...)
+
+	var hashKey scrypto.Hash256
+	copy(hashKey[:], key[:])
+	hmac := scrypto.ComputeMAC(hashKey, beta)
+
+	// constructs header routingInfo and HMAC to be forwarded to the first relay.
+	for i := numRelays - 1; i < 0; i-- {
+		relayAddr := circuitAddrs[i].Bytes()
+
+		//concat and truncate
+		addrHmac := append(relayAddr, hmac...)
+		beta = append(addrHmac, beta...)
+		beta = beta[:len(beta)-relayDataSize]
+
+		// encrypt with relay shared secret
+		key := generateEncryptionKey(sKeys[i-1][:])
+		stream, err := scrypto.GenerateCipherStream(key, nonce, streamSize)
+		if err != nil {
+			return &Header{}, err
+		}
+		xor(beta, beta, stream)
+
+		// calculate next hmac
+		var hashKey scrypto.Hash256
+		copy(hashKey[:], key[:])
+		hmac = scrypto.ComputeMAC(hashKey, beta)
 	}
 
 	return &header, nil
 }
 
-func generateFillers(keys []scrypto.Hash256) [][]byte {
-	var fillers [][]byte
-	for i, k := range keys {
-		key := k[:]
-		numBits := 2 * (i + 1) * SEC_K
-		fmt.Println(numBits, key)
+func generatePadding(keys []scrypto.Hash256, nonce []byte) ([]byte, error) {
+	numRelays := len(keys)
+
+	if numRelays > numMaxRelays {
+		return []byte{}, fmt.Errorf("Maximum number of relays is %v, got %v",
+			numMaxRelays, len(keys))
 	}
-	return fillers
+
+	var padding []byte
+
+	for i := 1; i < numRelays; i++ {
+		filler := make([]byte, relayDataSize)
+		padding = append(padding, filler...)
+
+		key := generateEncryptionKey(keys[i-1][:])
+		stream, err := scrypto.GenerateCipherStream(key, nonce, streamSize)
+		if err != nil {
+			return []byte{}, err
+		}
+		// xor padding with last |padding| bytes of stream data
+		xor(padding, padding, stream[len(stream)-i*relayDataSize:])
+	}
+	return padding, nil
 }
 
 // returns HMAC-SHA-256 of the header
@@ -117,7 +194,7 @@ func (h *Header) Mac(key scrypto.Hash256) []byte {
 
 type H struct {
 	Ge []byte
-	Pd []byte
+	Ri [routingInfoSize]byte
 }
 
 func (h *Header) GobEncode() ([]byte, error) {
@@ -126,7 +203,7 @@ func (h *Header) GobEncode() ([]byte, error) {
 
 	pk := h.GroupElement.(*ecdsa.PublicKey)
 	element := ec.Marshal(pk.Curve, pk.X, pk.Y)
-	err := enc.Encode(H{Ge: element, Pd: h.Payload})
+	err := enc.Encode(H{Ge: element, Ri: h.RoutingInfo})
 	if err != nil {
 		return nil, fmt.Errorf("Err encoding header: %s", err)
 	}
@@ -151,7 +228,7 @@ func (h *Header) GobDecode(raw []byte) error {
 		return fmt.Errorf("Err decoding header: group element not using %s curve.", curve.Params().Name)
 	}
 	h.GroupElement = ecdsa.PublicKey{Curve: curve, X: x, Y: y}
-	h.Payload = hb.Pd
+	h.RoutingInfo = hb.Ri
 	return nil
 }
 
@@ -240,4 +317,25 @@ func copyPublicKey(pk *ecdsa.PublicKey) *ecdsa.PublicKey {
 	newPk.X = pk.X
 	newPk.Y = pk.Y
 	return &newPk
+}
+
+// xor function
+func xor(dst, a, b []byte) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		dst[i] = a[i] ^ b[i]
+	}
+	return n
+}
+
+// generates symmetric encryption/decryption keys used to generate the cipher
+// stream for xor'ing with plaintext.
+func generateEncryptionKey(k []byte) []byte {
+	var key scrypto.Hash256
+	copy(key[:], k[:])
+	keyPayload := []byte("key")
+	return scrypto.ComputeMAC(key, keyPayload)
 }

@@ -17,7 +17,7 @@ func TestNewPacket(t *testing.T) {
 	circuitPubKeys := make([]crypto.PublicKey, 1)
 	_, pub := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	circuitPubKeys = append(circuitPubKeys, pub)
-	routingInfo := [ROUTING_INFO_SIZE]byte{}
+	routingInfo := [routingInfoSize]byte{}
 	rInfoDummy := "pretend this is an IP"
 	copy(routingInfo[:], rInfoDummy)
 
@@ -30,17 +30,19 @@ func TestNewPacket(t *testing.T) {
 	}
 }
 
+func TestNewHeader(t *testing.T) {}
+
 func TestGenSharedKeys(t *testing.T) {
 	// setup
 	curve := ec.P256()
-	numHops := 2
-	circuitPubKeys := make([]crypto.PublicKey, numHops)
-	circuitPrivKeys := make([]crypto.PublicKey, numHops)
+	numRelays := 2
+	circuitPubKeys := make([]crypto.PublicKey, numRelays)
+	circuitPrivKeys := make([]crypto.PublicKey, numRelays)
 
 	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	pubSender := privSender.PublicKey
 
-	for i := 0; i < numHops; i++ {
+	for i := 0; i < numRelays; i++ {
 		pub, priv := generateHopKeys()
 		circuitPrivKeys[i] = priv
 		circuitPubKeys[i] = pub
@@ -52,8 +54,8 @@ func TestGenSharedKeys(t *testing.T) {
 		t.Error(err)
 	}
 
-	e := ec.Marshal(pubSender.Curve, pubSender.X, pubSender.Y)
-	t.Error(e, len(e), pubSender.X.BitLen(), pubSender.Y.BitLen())
+	//e := ec.Marshal(pubSender.Curve, pubSender.X, pubSender.Y)
+	//t.Error(e, len(e), pubSender.X.BitLen(), pubSender.Y.BitLen())
 
 	// if shared keys were properly generated, the 1st hop must be able to 1)
 	// generate shared key and 2) blind group element. The 2rd hop must be able to
@@ -87,8 +89,10 @@ func TestEncodingDecodingPacket(t *testing.T) {}
 
 func TestEncodingDecodingHeader(t *testing.T) {
 	pub, _ := generateHopKeys()
-	hp := []byte("header payload")
-	header := &Header{Payload: hp, GroupElement: pub}
+	str := "dummy routing info"
+	ri := [routingInfoSize]byte{}
+	copy(ri[:], str[:])
+	header := &Header{RoutingInfo: ri, GroupElement: pub}
 
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -107,9 +111,9 @@ func TestEncodingDecodingHeader(t *testing.T) {
 		return
 	}
 
-	if string(header.Payload) != string(headerAfter.Payload) {
-		t.Error(fmt.Printf("Original and encoded/decoded header payload mismatch:\n >> %v \n >> %v\n",
-			string(header.Payload), string(headerAfter.Payload)))
+	if string(header.RoutingInfo[:]) != string(headerAfter.RoutingInfo[:]) {
+		t.Error(fmt.Printf("Original and encoded/decoded header routing info mismatch:\n >> %v \n >> %v\n",
+			string(header.RoutingInfo[:]), string(headerAfter.RoutingInfo[:])))
 	}
 
 	hGe := header.GroupElement.(*ecdsa.PublicKey)
@@ -125,6 +129,37 @@ func TestEncodingDecodingHeader(t *testing.T) {
 	if diff.Cmp(big.NewInt(0)) != 0 {
 		t.Error(fmt.Printf("Original and encoded/decoded group elements mismatch:\n >> %v \n >> %v\n",
 			hGe.X, haGe.X))
+	}
+}
+
+func TestPaddingGeneration(t *testing.T) {
+	numRelays := 3
+	circuitPubKeys := make([]crypto.PublicKey, numRelays)
+	circuitPrivKeys := make([]crypto.PublicKey, numRelays)
+
+	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
+
+	for i := 0; i < numRelays; i++ {
+		pub, priv := generateHopKeys()
+		circuitPrivKeys[i] = priv
+		circuitPubKeys[i] = pub
+	}
+
+	// generateSharedSecrets
+	sharedKeys, err := generateSharedSecrets(circuitPubKeys, *privSender)
+	if err != nil {
+		t.Error(err)
+	}
+
+	nonce := make([]byte, 24)
+	padding, err := generatePadding(sharedKeys, nonce)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expPaddingLen := (numRelays - 1) * relayDataSize
+	if len(padding) != expPaddingLen {
+		t.Error(fmt.Printf("Final padding should have lenght of |(numRelays - 1) * relaysDataSize| (%v), got %v", expPaddingLen, len(padding)))
 	}
 }
 
