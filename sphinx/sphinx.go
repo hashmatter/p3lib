@@ -23,8 +23,6 @@ const (
 	// size in bytes of MAC used to verify integrity of packet
 	hmacSize = 32
 
-	// size in bytes of address of relays and final destination. 16 bytes for IP
-	// address (if IPv4, then 4 bytes + padding), 1 byte for signalling ip
 	// protocol (ip4 or ip6), 1 byte for transport protocol and 2 bytes for
 	// optional port
 	addrSize = 21
@@ -41,7 +39,7 @@ const (
 
 	// size in bytes for each routing info segment. each segment must be invariant
 	// regardless the relay position in the circuit
-	routingInfoSize = numMaxRelays * relayDataSize
+	routingInfoSize = numMaxRelays * relayDataSize // - hmacSize ??
 
 	// size in bytes of the output of the stream cipher. the output is used to
 	// encrypt the header, as well as create the header padding
@@ -86,9 +84,8 @@ type Header struct {
 	HeaderMac    [hmacSize]byte
 }
 
-func newHeader(gElement crypto.PublicKey, ad ma.Multiaddr,
+func newHeader(gElement crypto.PrivateKey, ad ma.Multiaddr,
 	circuitAddrs []ma.Multiaddr, circuitPubKeys []crypto.PublicKey) (*Header, error) {
-	var header Header
 
 	numRelays := len(circuitPubKeys)
 	if numRelays > numMaxRelays {
@@ -110,13 +107,14 @@ func newHeader(gElement crypto.PublicKey, ad ma.Multiaddr,
 	}
 
 	//TODO: default nonce?
-	nonce := make([]byte, 25)
+	nonce := make([]byte, 24)
 	padding, err := generatePadding(sKeys, nonce)
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
 
-	addr := make([]byte, relayDataSize)
+	// final address padded with 0s until reaching addrSize
+	addr := make([]byte, addrSize)
 	copy(addr, ad.Bytes())
 
 	// prepares core of the onion routing packet to be decrypted by last relay
@@ -126,21 +124,36 @@ func newHeader(gElement crypto.PublicKey, ad ma.Multiaddr,
 	if err != nil {
 		return &Header{}, err
 	}
-	xor(addr, addr, stream)
-	beta := append(addr, padding...)
 
+	xor(addr, addr, stream)
+
+	// Bn-1
+	var beta [routingInfoSize]byte
+	copy(beta[:], addr)
+	copy(beta[len(addr):], padding)
+
+	// Yn-1
 	var hashKey scrypto.Hash256
 	copy(hashKey[:], key[:])
-	hmac := scrypto.ComputeMAC(hashKey, beta)
+	hmac := scrypto.ComputeMAC(hashKey, beta[:])
 
 	// constructs header routingInfo and HMAC to be forwarded to the first relay.
 	for i := numRelays - 1; i < 0; i-- {
 		relayAddr := circuitAddrs[i].Bytes()
 
-		//concat and truncate
-		addrHmac := append(relayAddr, hmac...)
-		beta = append(addrHmac, beta...)
-		beta = beta[:len(beta)-relayDataSize]
+		// REFACTOR: truncate and concat
+		var addrHmac [relayDataSize]byte
+		copy(addrHmac[:], relayAddr)
+		copy(addrHmac[len(relayAddr):], hmac)
+
+		// beta shift right * len(addrHmac) [truncate]
+		for j := 0; j < relayDataSize; j++ {
+			beta[i+relayDataSize] = beta[i]
+			beta[i] = 0
+		}
+
+		// add addrHmac to beginning of beta [concat]
+		copy(beta[:], addrHmac[:])
 
 		// encrypt with relay shared secret
 		key := generateEncryptionKey(sKeys[i-1][:])
@@ -148,15 +161,20 @@ func newHeader(gElement crypto.PublicKey, ad ma.Multiaddr,
 		if err != nil {
 			return &Header{}, err
 		}
-		xor(beta, beta, stream)
+		xor(beta[:], beta[:], stream)
 
 		// calculate next hmac
 		var hashKey scrypto.Hash256
 		copy(hashKey[:], key[:])
-		hmac = scrypto.ComputeMAC(hashKey, beta)
+		hmac = scrypto.ComputeMAC(hashKey, beta[:])
 	}
 
-	return &header, nil
+	var headerMac [hmacSize]byte
+	copy(headerMac[:], hmac)
+
+	// THINK: instead of returning header, return (routingInfo, headerMAc) and
+	// construct the header upstream
+	return &Header{gElement, beta, headerMac}, nil
 }
 
 func generatePadding(keys []scrypto.Hash256, nonce []byte) ([]byte, error) {

@@ -9,6 +9,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
+	ma "github.com/multiformats/go-multiaddr"
 	"math/big"
 	"testing"
 )
@@ -30,7 +31,51 @@ func TestNewPacket(t *testing.T) {
 	}
 }
 
-func TestNewHeader(t *testing.T) {}
+func TestNewHeader(t *testing.T) {
+	numRelays := 5
+	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
+	relayAddrsString := []string{
+		"/ip4/127.0.0.1/udp/1234",
+		"/ip4/198.162.0.1/tcp/4321",
+		"/ip6/2607:f8b0:4003:c00::6a/udp/5678",
+		// used if numRelay > 3
+		"/ip4/198.162.0.2/tcp/4321",
+		"/ip4/198.162.0.3/tcp/4321",
+	}
+	relayAddrs := make([]ma.Multiaddr, numRelays)
+
+	circuitPrivKeys := make([]crypto.PrivateKey, numRelays)
+	circuitPubKeys := make([]crypto.PublicKey, numRelays)
+
+	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
+	//pubSender := privSender.PublicKey
+
+	for i := 0; i < numRelays; i++ {
+		pub, priv := generateHopKeys()
+		circuitPrivKeys[i] = priv
+		circuitPubKeys[i] = pub
+		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
+	}
+
+	header, err := newHeader(*privSender, finalAddr, relayAddrs, circuitPubKeys)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ri := header.RoutingInfo
+	count := 0
+
+	for j := len(ri) - 1; j > 0; j-- {
+		if ri[j] != 0 {
+			break
+		}
+		count = count + 1
+	}
+
+	//t.Error(header)
+	t.Error(len(ri), len(header.HeaderMac))
+	t.Error(count)
+}
 
 func TestGenSharedKeys(t *testing.T) {
 	// setup
