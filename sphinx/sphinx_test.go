@@ -30,6 +30,8 @@ func TestNewPacket(t *testing.T) {
 	}
 }
 
+func TestNewHeader(t *testing.T) {}
+
 func TestGenSharedKeys(t *testing.T) {
 	// setup
 	curve := ec.P256()
@@ -159,10 +161,6 @@ func TestPaddingGeneration(t *testing.T) {
 	if len(padding) != expPaddingLen {
 		t.Error(fmt.Printf("Final padding should have lenght of |(numRelays - 1) * relaysDataSize| (%v), got %v", expPaddingLen, len(padding)))
 	}
-
-	// relay 3 removes one layer of encryption
-	// relay 1 removes another layer of encryption
-	// final padding must be all 0s
 }
 
 // helpers
