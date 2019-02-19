@@ -15,20 +15,7 @@ import (
 )
 
 func TestNewPacket(t *testing.T) {
-	circuitPubKeys := make([]crypto.PublicKey, 1)
-	_, pub := ecdsa.GenerateKey(ec.P256(), rand.Reader)
-	circuitPubKeys = append(circuitPubKeys, pub)
-	routingInfo := [routingInfoSize]byte{}
-	rInfoDummy := "pretend this is an IP"
-	copy(routingInfo[:], rInfoDummy)
-
-	p, err := NewPacket(pub, circuitPubKeys, routingInfo)
-	if err != nil {
-		t.Error(err)
-	}
-	if p == nil {
-		t.Error("NewPacket_Test: packet not correctly constructed")
-	}
+	// TODO
 }
 
 func TestNewHeader(t *testing.T) {
@@ -57,7 +44,7 @@ func TestNewHeader(t *testing.T) {
 		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
 	}
 
-	header, err := newHeader(*privSender, finalAddr, relayAddrs, circuitPubKeys)
+	header, err := constructHeader(*privSender, finalAddr, relayAddrs, circuitPubKeys)
 	if err != nil {
 		t.Error(err)
 	}
@@ -83,7 +70,7 @@ func TestNewHeader(t *testing.T) {
 func TestGenSharedKeys(t *testing.T) {
 	// setup
 	curve := ec.P256()
-	numRelays := 2
+	numRelays := 3
 	circuitPubKeys := make([]crypto.PublicKey, numRelays)
 	circuitPrivKeys := make([]crypto.PublicKey, numRelays)
 

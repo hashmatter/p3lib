@@ -61,18 +61,20 @@ const (
 
 type Packet struct {
 	Version byte
-	Header
+	*Header
 	Payload []byte
 }
 
-func NewPacket(groupElement crypto.PublicKey, circuitPubKeys []crypto.PublicKey, routingInfo [routingInfoSize]byte) (*Packet, error) {
+func NewPacket(sessionKey crypto.PrivateKey, circuitPubKeys []crypto.PublicKey,
+	finalAddr ma.Multiaddr, relayAddrs []ma.Multiaddr) (*Packet, error) {
+
 	if len(circuitPubKeys) == 0 {
 		return &Packet{}, errors.New("Err: A set of relay pulic keys must be provided")
 	}
 
-	header := Header{
-		GroupElement: groupElement,
-		RoutingInfo:  routingInfo,
+	header, err := constructHeader(sessionKey, finalAddr, relayAddrs, circuitPubKeys)
+	if err != nil {
+		return &Packet{}, err
 	}
 
 	return &Packet{
@@ -87,102 +89,90 @@ type Header struct {
 	HeaderMac    [hmacSize]byte
 }
 
-func newHeader(gElement crypto.PrivateKey, ad ma.Multiaddr,
+func constructHeader(gElement crypto.PrivateKey, ad ma.Multiaddr,
 	circuitAddrs []ma.Multiaddr, circuitPubKeys []crypto.PublicKey) (*Header, error) {
 
-	// TODO: refactor for external validation function returning a slice of errors
 	numRelays := len(circuitPubKeys)
-	if numRelays > numMaxRelays {
-		return &Header{}, fmt.Errorf("Maximum number of relays is %v, got %v",
-			numMaxRelays, numRelays)
-	}
 
-	if len(ad.Bytes()) > addrSize {
-		return &Header{}, fmt.Errorf("Max. size final address is 21 bytes, got %v",
-			len(ad.Bytes()))
+	// TODO: improve verification
+	validationErrs := validateHeaderInput(numRelays, ad.Bytes())
+	if len(validationErrs) != 0 {
+		return &Header{}, fmt.Errorf("Header validation errors %v", validationErrs)
 	}
-
-	// TODO: verify also if circuit addresses are 1) valid and 2) same size as
-	// circtuiPubkeys (maybe use dictionary?)
 
 	sKeys, err := generateSharedSecrets(circuitPubKeys, gElement.(ecdsa.PrivateKey))
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
 
-	//TODO: default nonce?
-	nonce := make([]byte, 24)
+	nonce := make([]byte, 24) //TODO: default nonce?
 	padding, err := generatePadding(sKeys, nonce)
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
 
-	// final address padded with 0s up to relayDataSize
+	// final address padded with 0s until reaching relayDataSize.
 	addr := make([]byte, relayDataSize)
 	copy(addr, ad.Bytes())
 
-	// TODO: REFACTOR to inside the loop
-	//prepares core of the onion routing packet to be decrypted by last relay
-	// before forwarding to final destination.
-	key := generateEncryptionKey(sKeys[(len(sKeys) - 1)][:], encryptionKey)
-	stream, err := scrypto.GenerateCipherStream(key, nonce, streamSize)
-	if err != nil {
-		return &Header{}, err
-	}
+	var routingInfo [routingInfoSize]byte // rename to header?
+	var hmac [hmacSize]byte
 
-	xor(addr, addr, stream)
+	// adds padding to header. next, it will be shifted right and the final padded
+	// address will be added in the beginning
+	copy(routingInfo[:], padding)
 
-	// Bn-1
-	var beta [routingInfoSize]byte
-	copy(beta[:], addr)
-	copy(beta[len(addr):], padding)
+	for i := numRelays - 1; i >= 0; i-- {
+		// generate keys for obfuscate routing info and for generate header HMAC
+		encKey := generateEncryptionKey(sKeys[i][:], encryptionKey)
+		macKey := generateEncryptionKey(sKeys[i][:], hashKey)
 
-	// Yn-1
-	var hKey scrypto.Hash256
-	copy(hKey[:], generateEncryptionKey(sKeys[(len(sKeys) - 1)][:], hashKey))
-	hmac := scrypto.ComputeMAC(hKey, beta[:])
-
-	// constructs header routingInfo and HMAC to be forwarded to the first relay.
-	for i := numRelays - 1; i < 0; i-- {
-		relayAddr := circuitAddrs[i].Bytes()
-
-		// generate keys for obfuscate routing info and for generate HMAC
-		encKey := generateEncryptionKey(sKeys[i-1][:], encryptionKey)
-		macKey := generateEncryptionKey(sKeys[i-1][:], hashKey)
-
-		// REFACTOR: truncate and concat
+		// first hmac is 0s in to signal the relay that it is an exit node
 		var addrHmac [relayDataSize]byte
-		copy(addrHmac[:], relayAddr)
-		copy(addrHmac[len(relayAddr):], hmac)
+		copy(addrHmac[:], addr)
+		copy(addrHmac[len(addr):], hmac[:])
 
 		// beta shift right * len(addrHmac) [truncate]
-		for j := 0; j < relayDataSize; j++ {
-			beta[i+relayDataSize] = beta[i]
-			beta[i] = 0
-		}
+		copy(routingInfo[:], shiftRight(routingInfo[:], relayDataSize))
 
-		// add addrHmac to beginning of beta [concat]
-		copy(beta[:], addrHmac[:])
+		// add addrHmac to beginning of current routingInfo
+		copy(routingInfo[:], addrHmac[:])
 
-		// encrypt with relay shared secret
 		stream, err := scrypto.GenerateCipherStream(encKey, nonce, streamSize)
 		if err != nil {
 			return &Header{}, err
 		}
-		xor(beta[:], beta[:], stream)
+		// obfuscates beta by xoring the last bytes of the cipher stream with the
+		// current header information
+		xor(routingInfo[:], routingInfo[:], stream[len(stream)-routingInfoSize:])
 
 		// calculate next hmac
 		var hKey scrypto.Hash256
 		copy(hKey[:], macKey)
-		hmac = scrypto.ComputeMAC(hKey, beta[:])
+		copy(hmac[:], scrypto.ComputeMAC(hKey, routingInfo[:]))
+
+		// set next address
+		addr = circuitAddrs[i].Bytes()
 	}
 
-	var headerMac [hmacSize]byte
-	copy(headerMac[:], hmac)
+	return &Header{gElement, routingInfo, hmac}, nil
+}
 
-	// THINK: instead of returning header, return (routingInfo, headerMAc) and
-	// construct the header upstream
-	return &Header{gElement, beta, headerMac}, nil
+func validateHeaderInput(numRelays int, addr []byte) []error {
+	var errs []error
+
+	// TODO: verify also if circuit addresses are 1) valid and 2) same size as
+	// circtuiPubkeys
+	if numRelays > numMaxRelays {
+		errs = append(errs, fmt.Errorf("Maximum number of relays is %v, got %v",
+			numMaxRelays, numRelays))
+	}
+
+	if len(addr) > addrSize {
+		errs = append(errs, fmt.Errorf("Max. size final address is 21 bytes, got %v",
+			len(addr)))
+	}
+	return errs
 }
 
 func generatePadding(keys []scrypto.Hash256, nonce []byte) ([]byte, error) {
@@ -343,6 +333,14 @@ func copyPublicKey(pk *ecdsa.PublicKey) *ecdsa.PublicKey {
 	newPk.X = pk.X
 	newPk.Y = pk.Y
 	return &newPk
+}
+
+func shiftRight(buf []byte, n int) []byte {
+	for i := 0; i < n; i++ {
+		buf[i+relayDataSize] = buf[i]
+		buf[i] = 0
+	}
+	return buf
 }
 
 // xor function
