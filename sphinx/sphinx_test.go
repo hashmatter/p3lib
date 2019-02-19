@@ -32,7 +32,7 @@ func TestNewPacket(t *testing.T) {
 }
 
 func TestNewHeader(t *testing.T) {
-	numRelays := 5
+	numRelays := 4
 	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
 	relayAddrsString := []string{
 		"/ip4/127.0.0.1/udp/1234",
@@ -63,8 +63,9 @@ func TestNewHeader(t *testing.T) {
 	}
 
 	ri := header.RoutingInfo
-	count := 0
 
+	// checks if there are suffixed zeros in the padding
+	count := 0
 	for j := len(ri) - 1; j > 0; j-- {
 		if ri[j] != 0 {
 			break
@@ -72,9 +73,11 @@ func TestNewHeader(t *testing.T) {
 		count = count + 1
 	}
 
-	//t.Error(header)
-	t.Error(len(ri), len(header.HeaderMac))
-	t.Error(count)
+	if count > 2 {
+		t.Errorf("Header is revealing number of relays. Suffixed 0s count: %v", count)
+		t.Errorf("len(routingInfo): %v | len(headerMac): %v",
+			len(ri), len(header.HeaderMac))
+	}
 }
 
 func TestGenSharedKeys(t *testing.T) {
@@ -206,6 +209,7 @@ func TestPaddingGeneration(t *testing.T) {
 	if len(padding) != expPaddingLen {
 		t.Error(fmt.Printf("Final padding should have lenght of |(numRelays - 1) * relaysDataSize| (%v), got %v", expPaddingLen, len(padding)))
 	}
+
 }
 
 // helpers
