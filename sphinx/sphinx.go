@@ -2,7 +2,6 @@ package sphinx
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/ecdsa"
 	ec "crypto/elliptic"
 	"encoding/gob"
@@ -65,7 +64,7 @@ type Packet struct {
 	Payload []byte
 }
 
-func NewPacket(sessionKey crypto.PrivateKey, circuitPubKeys []crypto.PublicKey,
+func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 	finalAddr ma.Multiaddr, relayAddrs []ma.Multiaddr) (*Packet, error) {
 
 	if len(circuitPubKeys) == 0 {
@@ -84,13 +83,13 @@ func NewPacket(sessionKey crypto.PrivateKey, circuitPubKeys []crypto.PublicKey,
 }
 
 type Header struct {
-	GroupElement crypto.PublicKey
+	GroupElement ecdsa.PublicKey
 	RoutingInfo  [routingInfoSize]byte
 	HeaderMac    [hmacSize]byte
 }
 
-func constructHeader(gElement crypto.PrivateKey, ad ma.Multiaddr,
-	circuitAddrs []ma.Multiaddr, circuitPubKeys []crypto.PublicKey) (*Header, error) {
+func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
+	circuitAddrs []ma.Multiaddr, circuitPubKeys []ecdsa.PublicKey) (*Header, error) {
 
 	numRelays := len(circuitPubKeys)
 
@@ -100,7 +99,7 @@ func constructHeader(gElement crypto.PrivateKey, ad ma.Multiaddr,
 		return &Header{}, fmt.Errorf("Header validation errors %v", validationErrs)
 	}
 
-	sKeys, err := generateSharedSecrets(circuitPubKeys, gElement.(ecdsa.PrivateKey))
+	sKeys, err := generateSharedSecrets(circuitPubKeys, *sessionKey)
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
@@ -155,6 +154,8 @@ func constructHeader(gElement crypto.PrivateKey, ad ma.Multiaddr,
 		addr = circuitAddrs[i].Bytes()
 	}
 
+	// TODO: need to blind groupElement?
+	gElement := sessionKey.PublicKey
 	return &Header{gElement, routingInfo, hmac}, nil
 }
 
@@ -217,7 +218,7 @@ func (h *Header) GobEncode() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	enc := gob.NewEncoder(buf)
 
-	pk := h.GroupElement.(*ecdsa.PublicKey)
+	pk := h.GroupElement
 	element := ec.Marshal(pk.Curve, pk.X, pk.Y)
 	err := enc.Encode(H{Ge: element, Ri: h.RoutingInfo})
 	if err != nil {
@@ -249,7 +250,7 @@ func (h *Header) GobDecode(raw []byte) error {
 }
 
 // generates all shared secrets for a given path.
-func generateSharedSecrets(circuitPubKeys []crypto.PublicKey,
+func generateSharedSecrets(circuitPubKeys []ecdsa.PublicKey,
 	sessionKey ecdsa.PrivateKey) ([]scrypto.Hash256, error) {
 
 	curve := scrypto.GetCurve(sessionKey)
@@ -267,8 +268,8 @@ func generateSharedSecrets(circuitPubKeys []crypto.PublicKey,
 
 	// derives shared secret for first hop using ECDH with the local session key
 	// and the hop's public key
-	firstHopPubKey := circuitPubKeys[0].(*ecdsa.PublicKey)
-	sharedSecret := scrypto.GenerateECDHSharedSecret(firstHopPubKey, &sessionKey)
+	firstHopPubKey := circuitPubKeys[0]
+	sharedSecret := scrypto.GenerateECDHSharedSecret(&firstHopPubKey, &sessionKey)
 	sharedSecrets[0] = sharedSecret
 
 	// compute blinding factor for first hop, by hashing the ephemeral pubkey of
@@ -289,12 +290,12 @@ func generateSharedSecrets(circuitPubKeys []crypto.PublicKey,
 		newGroupElement, privElement := deriveGroupElementPair(privElement, blindingF, curve)
 
 		// computes shared secret
-		currentHopPubKey := circuitPubKeys[i].(*ecdsa.PublicKey)
+		currentHopPubKey := circuitPubKeys[i]
 		blindedPrivateKey := ecdsa.PrivateKey{
 			PublicKey: *newGroupElement,
 			D:         privElement,
 		}
-		sharedSecret = scrypto.GenerateECDHSharedSecret(currentHopPubKey, &blindedPrivateKey)
+		sharedSecret = scrypto.GenerateECDHSharedSecret(&currentHopPubKey, &blindedPrivateKey)
 
 		sharedSecrets[i] = sharedSecret
 

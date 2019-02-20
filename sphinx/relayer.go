@@ -5,21 +5,11 @@ import (
 	"crypto/sha256"
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
-	"net"
-)
-
-const (
-	defaultNonceValue = 0x0000000000000000
 )
 
 type RelayerCtx struct {
 	processedTags [][32]byte
 	privKey       *ecdsa.PrivateKey
-}
-
-type NextHop struct {
-	Packet
-	RoutingInfo net.Addr
 }
 
 func NewRelayerCtx(privKey *ecdsa.PrivateKey) *RelayerCtx {
@@ -31,15 +21,15 @@ func NewRelayerCtx(privKey *ecdsa.PrivateKey) *RelayerCtx {
 
 // processes packet in a given relayer context. If the packet is processed
 // successfully and not the destination, returns a new packet and routing
-// information for the next hop. Otherwise it returns the final decrypted
-// payload
-func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
-	var next NextHop
+// information for the next hop.
+func (r *RelayerCtx) ProcessPacket(packet *Packet) (bool, *Packet, []byte, error) {
+	var isExit bool
+	var next Packet
 	var finalPayload []byte
 
 	header := packet.Header
-	gElement := header.GroupElement.(*ecdsa.PublicKey)
-	sKey := scrypto.GenerateECDHSharedSecret(gElement, r.privKey)
+	sessionKey := r.privKey
+	sKey := scrypto.GenerateECDHSharedSecret(&header.GroupElement, sessionKey)
 
 	// TODO: first verify if group element is part of the curve. this is very
 	// important to avoid twist security attacks
@@ -47,7 +37,8 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 	// checks if packet has been processed based on the derived secret key
 	tag := sha256.Sum256([]byte(sKey[:]))
 	if contains(r.processedTags, tag) {
-		return &NextHop{}, []byte{}, fmt.Errorf("Packet already processed, discarding. (tag: %x)", tag)
+		return false, &Packet{}, []byte{},
+			fmt.Errorf("Packet already processed, discarding. (tag: %x)", tag)
 	}
 
 	r.processedTags = append(r.processedTags, tag)
@@ -56,12 +47,13 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 	// coincides with the header's HMAC
 	encodedHeader, err := header.GobEncode()
 	if err != nil {
-		return &NextHop{}, []byte{}, fmt.Errorf("Encoding header: %v", err)
+		return false, &Packet{}, []byte{}, fmt.Errorf("Encoding header: %v", err)
 	}
 	hmac := scrypto.ComputeMAC(sKey, encodedHeader)
 	valid := scrypto.CheckMAC(encodedHeader, hmac, sKey)
 	if valid == false {
-		return &NextHop{}, []byte{}, fmt.Errorf("Header MAC not valid for derived shared secret. Aborting packet processing.")
+		return false, &Packet{}, []byte{},
+			fmt.Errorf("Header MAC not valid for derived shared secret. Aborting packet processing.")
 	}
 
 	// adds padding (x000) before decrypting
@@ -72,13 +64,15 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (*NextHop, []byte, error) {
 	// circuits?)
 
 	// blinds group element for next hop
-	newElement := scrypto.ComputeBlindingFactor(gElement, sKey)
+
+	//newElement := scrypto.ComputeBlindingFactor(&header.GroupElement, sKey)
 
 	// finally, put together all necessary bits to forward to next relay, namely
 	// the packet itself and the routing information
-	next.Packet.GroupElement = newElement
 
-	return &next, finalPayload, nil
+	//next.Header.GroupElement = newElement
+
+	return isExit, &next, finalPayload, nil
 }
 
 func contains(s [][32]byte, e [32]byte) bool {
