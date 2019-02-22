@@ -49,14 +49,14 @@ func TestEndToEnd(t *testing.T) {
 
 	// relay 0 processes the header
 	r0 := NewRelayerCtx(&circuitPrivKeys[0])
-	exit, packet1, _, err := r0.ProcessPacket(packet0)
+	nextAddr, packet1, _, err := r0.ProcessPacket(packet0)
 	if err != nil {
-		t.Errorf("Err packet construction: %v", err)
+		t.Errorf("Err packet processing: %v", err)
 		return
 	}
 
-	if exit != false {
-		t.Errorf("Relay 0 should not be an exit relay (exit = %v)", exit)
+	if nextAddr.String() != relayAddrs[1].String() {
+		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[1])
 		return
 	}
 
@@ -65,35 +65,38 @@ func TestEndToEnd(t *testing.T) {
 		return
 	}
 
+	fmt.Println(packet1)
+
 	// relay 1 processes the header
 	r1 := NewRelayerCtx(&circuitPrivKeys[1])
-	exit, packet2, _, err := r1.ProcessPacket(packet1)
+	nextAddr, packet2, _, err := r1.ProcessPacket(packet1)
 	if err != nil {
-		t.Errorf("Err packet construction: %v", err)
+		t.Errorf("Err packet processing: %v", err)
 		return
 	}
 
-	if exit != false {
-		t.Errorf("Relay 1 should not be an exit relay (exit = %v)", exit)
+	if nextAddr != relayAddrs[3] {
+		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[2])
 		return
 	}
 
 	// relay 2 processes the header
 	r2 := NewRelayerCtx(&circuitPrivKeys[2])
-	exit, packet3, _, err := r2.ProcessPacket(packet2)
+	nextAddr, packet3, _, err := r2.ProcessPacket(packet2)
 	if err != nil {
-		t.Errorf("Err packet construction: %v", err)
+		t.Errorf("Err packet processing: %v", err)
 		return
 	}
 
-	lastHmac := packet3.HeaderMac
+	lastHmac := packet3.RoutingInfoMac
 	lastAddr := packet3.RoutingInfo
 
-	// packet processed by r2 should be the exit
-	if exit != true {
-		t.Errorf("Relay 2 should BE the exit relay (exit = %v)", exit)
+	if nextAddr != relayAddrs[3] {
+		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[3])
 		return
 	}
+
+	// TODO: how do relayers know if it they are last relay? Do they need to??
 
 	// also verify if header mac is all nil
 	for _, b := range lastHmac {
@@ -107,11 +110,10 @@ func TestEndToEnd(t *testing.T) {
 	// constructed with
 	for i, b := range lastAddr {
 		if b != finalAddr.Bytes()[i] {
-			t.Errorf("Final addresses do not match: finalAddr (%v) != header.HeaderMac (%v) ", finalAddr, lastAddr)
+			t.Errorf("Final addresses do not match: finalAddr (%v) != header.RoutingInfoMac (%v) ", finalAddr, lastAddr)
 			break
 		}
 	}
-
 }
 
 func TestNewHeader(t *testing.T) {
@@ -160,7 +162,7 @@ func TestNewHeader(t *testing.T) {
 	if count > 2 {
 		t.Errorf("Header is revealing number of relays. Suffixed 0s count: %v", count)
 		t.Errorf("len(routingInfo): %v | len(headerMac): %v",
-			len(ri), len(header.HeaderMac))
+			len(ri), len(header.RoutingInfoMac))
 	}
 }
 

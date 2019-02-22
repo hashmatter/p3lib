@@ -61,7 +61,8 @@ const (
 type Packet struct {
 	Version byte
 	*Header
-	Payload []byte
+	Payload   []byte
+	PacketMac [hmacSize]byte
 }
 
 func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
@@ -76,22 +77,38 @@ func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 		return &Packet{}, err
 	}
 
+	var packetMac [hmacSize]byte
+	// TODO: calculate packetMac
+
 	return &Packet{
-		Version: defRealm,
-		Header:  header,
+		Version:   defRealm,
+		Header:    header,
+		PacketMac: packetMac,
 	}, nil
 }
 
 type Header struct {
-	GroupElement ecdsa.PublicKey
-	RoutingInfo  [routingInfoSize]byte
-	HeaderMac    [hmacSize]byte
+	GroupElement   ecdsa.PublicKey
+	RoutingInfo    [routingInfoSize]byte
+	RoutingInfoMac [hmacSize]byte
+}
+
+func (h *Header) String() string {
+	var out []string
+	out = append(out, fmt.Sprintf("------ HEADER\n"))
+	out = append(out, fmt.Sprintf(">> group element: %v\n", h.GroupElement))
+	out = append(out, fmt.Sprintf(">> routing info: %v ... %v\n",
+		h.RoutingInfo[:16], h.RoutingInfo[routingInfoSize-16:]))
+	out = append(out, fmt.Sprintf(">> routing info mac: %v\n", h.RoutingInfoMac))
+	out = append(out, fmt.Sprintf("------ \n"))
+	return string(out[0] + out[1] + out[2] + out[3] + out[4])
 }
 
 func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 	circuitAddrs []ma.Multiaddr, circuitPubKeys []ecdsa.PublicKey) (*Header, error) {
 
 	numRelays := len(circuitPubKeys)
+	defNonce := defaultNonce()
 
 	// TODO: improve verification
 	validationErrs := validateHeaderInput(numRelays, ad.Bytes())
@@ -104,17 +121,13 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
 
-	nonce := make([]byte, 24) //TODO: default nonce?
-	padding, err := generatePadding(sKeys, nonce)
+	padding, err := generatePadding(sKeys, defNonce)
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
 
-	// final address padded with 0s until reaching relayDataSize.
-	addr := make([]byte, relayDataSize)
-	copy(addr, ad.Bytes())
-
-	var routingInfo [routingInfoSize]byte // rename to header?
+	var addr [addrSize]byte
+	var routingInfo [routingInfoSize]byte
 	var hmac [hmacSize]byte
 
 	// adds padding to header. next, it will be shifted right and the final padded
@@ -128,7 +141,7 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 
 		// first hmac is 0s in to signal the relay that it is an exit node
 		var addrHmac [relayDataSize]byte
-		copy(addrHmac[:], addr)
+		copy(addrHmac[:], addr[:])
 		copy(addrHmac[len(addr):], hmac[:])
 
 		// beta shift right * len(addrHmac) [truncate]
@@ -137,13 +150,13 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		// add addrHmac to beginning of current routingInfo
 		copy(routingInfo[:], addrHmac[:])
 
-		stream, err := scrypto.GenerateCipherStream(encKey, nonce, streamSize)
+		stream, err := scrypto.GenerateCipherStream(encKey, defNonce, streamSize)
 		if err != nil {
 			return &Header{}, err
 		}
 		// obfuscates beta by xoring the last bytes of the cipher stream with the
 		// current header information
-		xor(routingInfo[:], routingInfo[:], stream[len(stream)-routingInfoSize:])
+		xor(routingInfo[:], routingInfo[:], stream)
 
 		// calculate next hmac
 		var hKey scrypto.Hash256
@@ -151,7 +164,7 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		copy(hmac[:], scrypto.ComputeMAC(hKey, routingInfo[:]))
 
 		// set next address
-		addr = circuitAddrs[i].Bytes()
+		copy(addr[:], circuitAddrs[i].Bytes())
 	}
 
 	// TODO: need to blind groupElement?
@@ -362,4 +375,10 @@ func generateEncryptionKey(k []byte, ktype string) []byte {
 	var key scrypto.Hash256
 	copy(key[:], k[:])
 	return scrypto.ComputeMAC(key, []byte(ktype))
+}
+
+//TODO: review security of default nonce in this context
+func defaultNonce() []byte {
+	nonce := make([]byte, 24)
+	return nonce[:]
 }
