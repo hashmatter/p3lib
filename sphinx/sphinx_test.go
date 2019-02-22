@@ -2,7 +2,6 @@ package sphinx
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/ecdsa"
 	ec "crypto/elliptic"
 	"crypto/rand"
@@ -14,8 +13,107 @@ import (
 	"testing"
 )
 
-func TestNewPacket(t *testing.T) {
-	// TODO
+// tests the construction and processing of an onion packet with a numRelays
+// size circuit.
+func TestEndToEnd(t *testing.T) {
+	numRelays := 3
+	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
+	relayAddrsString := []string{
+		"/ip4/127.0.0.1/udp/1234",
+		"/ip4/198.162.0.1/tcp/4321",
+		"/ip6/2607:f8b0:4003:c00::6a/udp/5678",
+	}
+	relayAddrs := make([]ma.Multiaddr, numRelays)
+
+	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
+	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
+
+	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
+
+	for i := 0; i < numRelays; i++ {
+		pub, priv := generateHopKeys()
+		circuitPrivKeys[i] = *priv
+		circuitPubKeys[i] = *pub
+		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
+	}
+
+	// initiator constructs new packet
+	packet0, err :=
+		NewPacket(privSender, circuitPubKeys, finalAddr, relayAddrs)
+	if err != nil {
+		t.Errorf("Err packet construction: %v", err)
+		return
+	}
+
+	// TODO: test payload decryption along the circuit somehow
+
+	// relay 0 processes the header
+	r0 := NewRelayerCtx(&circuitPrivKeys[0])
+	nextAddr, packet1, _, err := r0.ProcessPacket(packet0)
+	if err != nil {
+		t.Errorf("Err packet processing: %v", err)
+		return
+	}
+
+	if nextAddr.String() != relayAddrs[1].String() {
+		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[1])
+		return
+	}
+
+	if packet1.Header == nil {
+		t.Errorf("Packet's header is empty, abort. (pointer: %v)", packet1.Header)
+		return
+	}
+
+	fmt.Println(packet1)
+
+	// relay 1 processes the header
+	r1 := NewRelayerCtx(&circuitPrivKeys[1])
+	nextAddr, packet2, _, err := r1.ProcessPacket(packet1)
+	if err != nil {
+		t.Errorf("Err packet processing: %v", err)
+		return
+	}
+
+	if nextAddr != relayAddrs[3] {
+		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[2])
+		return
+	}
+
+	// relay 2 processes the header
+	r2 := NewRelayerCtx(&circuitPrivKeys[2])
+	nextAddr, packet3, _, err := r2.ProcessPacket(packet2)
+	if err != nil {
+		t.Errorf("Err packet processing: %v", err)
+		return
+	}
+
+	lastHmac := packet3.RoutingInfoMac
+	lastAddr := packet3.RoutingInfo
+
+	if nextAddr != relayAddrs[3] {
+		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[3])
+		return
+	}
+
+	// TODO: how do relayers know if it they are last relay? Do they need to??
+
+	// also verify if header mac is all nil
+	for _, b := range lastHmac {
+		if b != 0 {
+			t.Errorf("Final hmac should be all 0s, got %v", lastHmac)
+			break
+		}
+	}
+
+	// address in final packet should match the final address which the packet was
+	// constructed with
+	for i, b := range lastAddr {
+		if b != finalAddr.Bytes()[i] {
+			t.Errorf("Final addresses do not match: finalAddr (%v) != header.RoutingInfoMac (%v) ", finalAddr, lastAddr)
+			break
+		}
+	}
 }
 
 func TestNewHeader(t *testing.T) {
@@ -31,20 +129,21 @@ func TestNewHeader(t *testing.T) {
 	}
 	relayAddrs := make([]ma.Multiaddr, numRelays)
 
-	circuitPrivKeys := make([]crypto.PrivateKey, numRelays)
-	circuitPubKeys := make([]crypto.PublicKey, numRelays)
+	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
+	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
 
 	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	//pubSender := privSender.PublicKey
 
 	for i := 0; i < numRelays; i++ {
 		pub, priv := generateHopKeys()
-		circuitPrivKeys[i] = priv
-		circuitPubKeys[i] = pub
+		circuitPrivKeys[i] = *priv
+		circuitPubKeys[i] = *pub
 		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
 	}
 
-	header, err := constructHeader(*privSender, finalAddr, relayAddrs, circuitPubKeys)
+	header, err :=
+		constructHeader(privSender, finalAddr, relayAddrs, circuitPubKeys)
 	if err != nil {
 		t.Error(err)
 	}
@@ -63,7 +162,7 @@ func TestNewHeader(t *testing.T) {
 	if count > 2 {
 		t.Errorf("Header is revealing number of relays. Suffixed 0s count: %v", count)
 		t.Errorf("len(routingInfo): %v | len(headerMac): %v",
-			len(ri), len(header.HeaderMac))
+			len(ri), len(header.RoutingInfoMac))
 	}
 }
 
@@ -71,16 +170,16 @@ func TestGenSharedKeys(t *testing.T) {
 	// setup
 	curve := ec.P256()
 	numRelays := 3
-	circuitPubKeys := make([]crypto.PublicKey, numRelays)
-	circuitPrivKeys := make([]crypto.PublicKey, numRelays)
+	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
+	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
 
 	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	pubSender := privSender.PublicKey
 
 	for i := 0; i < numRelays; i++ {
 		pub, priv := generateHopKeys()
-		circuitPrivKeys[i] = priv
-		circuitPubKeys[i] = pub
+		circuitPrivKeys[i] = *priv
+		circuitPubKeys[i] = *pub
 	}
 
 	// generateSharedSecrets
@@ -97,8 +196,8 @@ func TestGenSharedKeys(t *testing.T) {
 	// generate shared key from new blind element
 
 	// 1) first hop derives shared key, which must be the same as sharedKeys[0]
-	privKey_1 := circuitPrivKeys[0].(*ecdsa.PrivateKey)
-	sk_1 := scrypto.GenerateECDHSharedSecret(&pubSender, privKey_1)
+	privKey_1 := circuitPrivKeys[0]
+	sk_1 := scrypto.GenerateECDHSharedSecret(&pubSender, &privKey_1)
 	if sk_1 != sharedKeys[0] {
 		t.Error(fmt.Printf("First shared key was not properly computed\n> %x\n> %x\n",
 			sk_1, sharedKeys[0]))
@@ -111,8 +210,8 @@ func TestGenSharedKeys(t *testing.T) {
 	newGroupElement := blindGroupElement(&pubSender, blindingF[:], curve)
 
 	// 3) second hop derives shared key from blinded group element
-	privKey_2 := circuitPrivKeys[1].(*ecdsa.PrivateKey)
-	sk_2 := scrypto.GenerateECDHSharedSecret(newGroupElement, privKey_2)
+	privKey_2 := circuitPrivKeys[1]
+	sk_2 := scrypto.GenerateECDHSharedSecret(newGroupElement, &privKey_2)
 	if sk_2 != sharedKeys[1] {
 		t.Error(fmt.Printf("Second shared key was not properly computed\n> %x\n> %x\n",
 			sk_2, sharedKeys[1]))
@@ -127,7 +226,7 @@ func TestEncodingDecodingHeader(t *testing.T) {
 	str := "dummy routing info"
 	ri := [routingInfoSize]byte{}
 	copy(ri[:], str[:])
-	header := &Header{RoutingInfo: ri, GroupElement: pub}
+	header := &Header{RoutingInfo: ri, GroupElement: *pub}
 
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -151,8 +250,8 @@ func TestEncodingDecodingHeader(t *testing.T) {
 			string(header.RoutingInfo[:]), string(headerAfter.RoutingInfo[:])))
 	}
 
-	hGe := header.GroupElement.(*ecdsa.PublicKey)
-	haGe := headerAfter.GroupElement.(ecdsa.PublicKey)
+	hGe := header.GroupElement
+	haGe := headerAfter.GroupElement
 
 	if hGe.Curve.Params().Name != haGe.Curve.Params().Name {
 		t.Error(fmt.Printf("Original and encoded/decoded group elements mismatch:\n >> %v \n >> %v\n",
@@ -169,15 +268,15 @@ func TestEncodingDecodingHeader(t *testing.T) {
 
 func TestPaddingGeneration(t *testing.T) {
 	numRelays := 3
-	circuitPubKeys := make([]crypto.PublicKey, numRelays)
-	circuitPrivKeys := make([]crypto.PublicKey, numRelays)
+	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
+	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
 
 	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 
 	for i := 0; i < numRelays; i++ {
 		pub, priv := generateHopKeys()
-		circuitPrivKeys[i] = priv
-		circuitPubKeys[i] = pub
+		circuitPrivKeys[i] = *priv
+		circuitPubKeys[i] = *pub
 	}
 
 	// generateSharedSecrets
