@@ -16,12 +16,14 @@ import (
 // tests the construction and processing of an onion packet with a numRelays
 // size circuit.
 func TestEndToEnd(t *testing.T) {
-	numRelays := 3
+	numRelays := 2
 	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
 	relayAddrsString := []string{
 		"/ip4/127.0.0.1/udp/1234",
 		"/ip4/198.162.0.1/tcp/4321",
-		"/ip6/2607:f8b0:4003:c00::6a/udp/5678",
+		"/ip4/120.120.0.2/tcp/1221",
+		// TODO: test ipv6
+		"/ip6/2607:f8b0:4003:c01::6a/udp/5678",
 	}
 	relayAddrs := make([]ma.Multiaddr, numRelays)
 
@@ -65,8 +67,6 @@ func TestEndToEnd(t *testing.T) {
 		return
 	}
 
-	fmt.Println(packet1)
-
 	// relay 1 processes the header
 	r1 := NewRelayerCtx(&circuitPrivKeys[1])
 	nextAddr, packet2, _, err := r1.ProcessPacket(packet1)
@@ -75,16 +75,24 @@ func TestEndToEnd(t *testing.T) {
 		return
 	}
 
-	if nextAddr != relayAddrs[3] {
+	if nextAddr.String() != relayAddrs[2].String() {
 		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[2])
 		return
 	}
+
+	fmt.Println(packet2)
 
 	// relay 2 processes the header
 	r2 := NewRelayerCtx(&circuitPrivKeys[2])
 	nextAddr, packet3, _, err := r2.ProcessPacket(packet2)
 	if err != nil {
 		t.Errorf("Err packet processing: %v", err)
+		return
+	}
+
+	if nextAddr.String() != finalAddr.String() {
+		t.Errorf("NextAddri (which is the last) is incorrect (%v != %v)",
+			nextAddr, finalAddr)
 		return
 	}
 

@@ -45,9 +45,14 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byt
 
 	r.processedTags = append(r.processedTags, tag)
 
-	nextAddr, nextHmac, nextRoutingInfo, err := processHeader(header, sessionKey, sKey)
+	nextAddrBytes, nextHmac, nextRoutingInfo, err := processHeader(header, sessionKey, sKey)
 	if err != nil {
-		return nextAddr, &Packet{}, []byte{}, err
+		return emptyAddr, &Packet{}, []byte{}, err
+	}
+
+	nextAddr, err := bytesToAddr(nextAddrBytes[:])
+	if err != nil {
+		return emptyAddr, &Packet{}, []byte{}, err
 	}
 
 	// blind next group element
@@ -74,50 +79,47 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byt
 	return nextAddr, &next, finalPayload, nil
 }
 
-func processHeader(header *Header, sessionKey *ecdsa.PrivateKey, sKey scrypto.Hash256) (ma.Multiaddr, [hmacSize]byte, [routingInfoSize]byte, error) {
+func processHeader(header *Header, sessionKey *ecdsa.PrivateKey, sKey scrypto.Hash256) ([addrSize]byte, [hmacSize]byte, [routingInfoSize]byte, error) {
 
-	var nextAddr ma.Multiaddr
 	var nextHmac [hmacSize]byte
+	var nextAddr [addrSize]byte
 	var nextRoutingInfo [routingInfoSize]byte
 	routingInfo := header.RoutingInfo
 
-	// check header HMAC
-	var routingInfoMac [hmacSize]byte
-
+	// generate keys
+	encKey := generateEncryptionKey(sKey[:], encryptionKey)
 	macKey := generateEncryptionKey(sKey[:], hashKey)
+
+	// check hmac
+	var routingInfoMac [hmacSize]byte
 	var hKey scrypto.Hash256
 	copy(hKey[:], macKey)
 	copy(routingInfoMac[:], scrypto.ComputeMAC(hKey, routingInfo[:]))
 
 	if equal(routingInfoMac[:], header.RoutingInfoMac[:]) == false {
-		return nextAddr, [hmacSize]byte{}, [routingInfoSize]byte{},
+		return [addrSize]byte{}, [hmacSize]byte{}, [routingInfoSize]byte{},
 			fmt.Errorf("HeaderMAC is not valid: \n %v\n %v\n",
 				header.RoutingInfoMac, routingInfoMac)
 	}
 
 	// adds padding (x001) before decrypting
-	padding := make([]byte, relayDataSize)
-	ri := append(routingInfo[:], padding...)
+	padding := make([]byte, hmacSize+addrSize)
+	paddedRi := append(routingInfo[:], padding...)
 
 	// decrypts header payload using the derived shared key
-	encKey := generateEncryptionKey(sKey[:], encryptionKey)
-	nonce := defaultNonce()
-	cipher, err := scrypto.GenerateCipherStream(encKey, nonce, streamSize)
+	cipher, err := scrypto.GenerateCipherStream(encKey, defaultNonce(), streamSize)
 	if err != nil {
-		return nextAddr, [hmacSize]byte{}, [routingInfoSize]byte{}, err
+		return [addrSize]byte{}, [hmacSize]byte{}, [routingInfoSize]byte{}, err
 	}
-	xor(ri, ri, cipher)
+
+	ri, _ := xor(paddedRi, cipher)
 
 	naddr := ri[:addrSize]
-	nmac := ri[addrSize : addrSize+hmacSize]
-	ninfo := ri[addrSize+hmacSize:]
+	nmac := ri[addrSize:relayDataSize]
+	var ninfo [routingInfoSize]byte
+	copy(ninfo[:], ri[relayDataSize:])
 
-	nextAddr, err = bytesToAddr(naddr)
-	if err != nil {
-		return nextAddr, [hmacSize]byte{}, [routingInfoSize]byte{},
-			fmt.Errorf("(new address re-building) %v", err)
-	}
-
+	copy(nextAddr[:], naddr[:])
 	copy(nextHmac[:], nmac[:])
 	copy(nextRoutingInfo[:], ninfo[:])
 
@@ -133,11 +135,13 @@ func bytesToAddr(b []byte) (ma.Multiaddr, error) {
 	case 4:
 		addr, err = ma.NewMultiaddrBytes(b[:8])
 	// IPv6 address
-	case 6:
-		addr, err = ma.NewMultiaddrBytes(b[:20])
+	case 41:
+		addr, err = ma.NewMultiaddrBytes(b[:21])
 	default:
-		return addr, fmt.Errorf("invalid bytes addr %v", b)
+		return addr, fmt.Errorf("invalid bytes addr (%v) %v", b[0], b)
 	}
+
+	fmt.Printf("%v %v %v\n", b, len(b), len(b[:8]))
 
 	return addr, err
 }
