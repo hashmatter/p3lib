@@ -133,15 +133,17 @@ func bytesToAddr(b []byte) (ma.Multiaddr, error) {
 	switch b[0] {
 	// IPv4 address
 	case 4:
-		addr, err = ma.NewMultiaddrBytes(b[:8])
+		addr, err = ma.NewMultiaddrBytes(b[:9])
+		// TODO: hack.  how to parse this properly?
+		if err != nil {
+			addr, err = ma.NewMultiaddrBytes(b[:8])
+		}
 	// IPv6 address
 	case 41:
 		addr, err = ma.NewMultiaddrBytes(b[:21])
 	default:
 		return addr, fmt.Errorf("invalid bytes addr (%v) %v", b[0], b)
 	}
-
-	fmt.Printf("%v %v %v\n", b, len(b), len(b[:8]))
 
 	return addr, err
 }

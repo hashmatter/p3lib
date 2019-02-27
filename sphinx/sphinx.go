@@ -87,6 +87,17 @@ func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 	}, nil
 }
 
+// checks if packet is last
+func (p *Packet) IsLast() bool {
+	hmac := p.Header.RoutingInfoMac
+	for _, b := range hmac {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 type Header struct {
 	GroupElement   ecdsa.PublicKey
 	RoutingInfo    [routingInfoSize]byte
@@ -98,9 +109,8 @@ func (h *Header) String() string {
 	out = append(out, fmt.Sprintf("------ HEADER\n"))
 	out = append(out, fmt.Sprintf(">> group element: %v\n", h.GroupElement))
 	out = append(out, fmt.Sprintf(">> routing info mac: %v\n", h.RoutingInfoMac))
-	//out = append(out, fmt.Sprintf(">> routing info: %v ... %v\n",
-	//	h.RoutingInfo[:16], h.RoutingInfo[routingInfoSize-16:]))
-	out = append(out, fmt.Sprintf(">> routing info: %v\n", h.RoutingInfo))
+	out = append(out, fmt.Sprintf(">> routing info: %v ... %v\n",
+		h.RoutingInfo[:16], h.RoutingInfo[routingInfoSize-16:]))
 	out = append(out, fmt.Sprintf("------ \n"))
 	return string(out[0] + out[1] + out[2] + out[3] + out[4])
 }
@@ -175,21 +185,23 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		copy(hKey[:], macKey)
 		copy(hmac[:], scrypto.ComputeMAC(hKey, routingInfo[:]))
 
-		//fmt.Printf("<< (%v), %v\n", i, sKeys[i])
-
 		// set next address
 		copy(addr[:], circuitAddrs[i].Bytes())
 
+		// TODO: REMOVE
 		if i == 2 {
-			fmt.Printf(">> addr: %v\n", addr)
-			fmt.Printf(">> hmac: %v\n", hmac)
-			fmt.Printf(">> routingInfo (%v): %v\n\n", len(routingInfo), routingInfo)
+			var out []string
+			out = append(out, fmt.Sprintf("------ HEADER\n"))
+			//out = append(out, fmt.Sprintf(">> group element: %v\n", gElement))
+			out = append(out, fmt.Sprintf(">> routing info mac: %v\n", hmac))
+			out = append(out, fmt.Sprintf(">> routing info: %v\n", routingInfo))
+			out = append(out, fmt.Sprintf("------ \n"))
+			//fmt.Println(out)
 		}
+
 	}
 
-	// TODO: need to blind groupElement?
-	gElement := sessionKey.PublicKey
-	return &Header{gElement, routingInfo, hmac}, nil
+	return &Header{sessionKey.PublicKey, routingInfo, hmac}, nil
 }
 
 func validateHeaderInput(numRelays int, addr []byte) []error {
@@ -318,13 +330,12 @@ func generateSharedSecrets(circuitPubKeys []ecdsa.PublicKey,
 		// derives new group element pair. private part of the element is derived
 		// with the scalar_multiplication between the blinding factor and the
 		// private scalar of the previous group element
-		newGroupElement, privElement := deriveGroupElementPair(privElement, blindingF, curve)
-
+		newGroupElement, nextPrivElement := deriveGroupElementPair(privElement, blindingF, curve)
 		// computes shared secret
 		currentHopPubKey := circuitPubKeys[i]
 		blindedPrivateKey := ecdsa.PrivateKey{
 			PublicKey: *newGroupElement,
-			D:         privElement,
+			D:         &nextPrivElement,
 		}
 		sharedSecret = scrypto.GenerateECDHSharedSecret(&currentHopPubKey, &blindedPrivateKey)
 
@@ -332,13 +343,16 @@ func generateSharedSecrets(circuitPubKeys []ecdsa.PublicKey,
 
 		// computes next blinding factor
 		blindingF = scrypto.ComputeBlindingFactor(newGroupElement, sharedSecret)
+
+		// sets next private element
+		privElement = nextPrivElement
 	}
 	return sharedSecrets, nil
 }
 
 // blinds a group element given a blinding factor and returns both private and
 // public keys of the new element
-func deriveGroupElementPair(privElement big.Int, blindingF scrypto.Hash256, curve ec.Curve) (*ecdsa.PublicKey, *big.Int) {
+func deriveGroupElementPair(privElement big.Int, blindingF scrypto.Hash256, curve ec.Curve) (*ecdsa.PublicKey, big.Int) {
 	var pointBlindingF big.Int
 	pointBlindingF.SetBytes(blindingF[:])
 	privElement.Mul(&privElement, &pointBlindingF)
@@ -347,7 +361,7 @@ func deriveGroupElementPair(privElement big.Int, blindingF scrypto.Hash256, curv
 	x, y := curve.Params().ScalarBaseMult(privElement.Bytes())
 	pubkey := ecdsa.PublicKey{Curve: curve, X: x, Y: y}
 
-	return &pubkey, &privElement
+	return &pubkey, privElement
 }
 
 // blinds a group element given a blinding factor but returns only the public
