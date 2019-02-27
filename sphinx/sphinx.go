@@ -127,6 +127,18 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		return &Header{}, fmt.Errorf("Header validation errors %v", validationErrs)
 	}
 
+	// first, verify if ALL relay group elements are part of the expected curve.
+	// this is very important tp avoid ECC twist security attacks
+	// TODO: generalize curve to use othe sensible options
+	curve := ec.P256()
+	for i, ge := range circuitPubKeys {
+		isOnCurve := curve.Params().IsOnCurve(ge.X, ge.Y)
+		if isOnCurve == false {
+			return &Header{},
+				fmt.Errorf("Potential ECC attack! Group element of relay [%v] is not on the expected curve:", i)
+		}
+	}
+
 	sKeys, err := generateSharedSecrets(circuitPubKeys, *sessionKey)
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)

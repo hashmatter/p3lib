@@ -1,27 +1,27 @@
 # p3lib
 
-![Version](https://img.shields.io/badge/version-0.1-blue.svg?style=for-the-badge)
+[![Build Status](https://travis-ci.org/hashmatter/p3lib.svg?branch=master)](https://travis-ci.org/hashmatter/p3lib) ![Version](https://img.shields.io/badge/version-0.1-blue.svg?style=for-the-badge)
 
 **The toolbox for engineers to enhance privacy in P2P networks**
 
 p3lib implements a set of privacy preserving primitives (p3) and protocols for
-routing and messaging in P2P networks. It's plug-and-play privacy!
+routing and messaging in P2P networks. It's basically plug-and-play privacy for
+your decentralized and distributed systems.
 
-p3lib is currently focusing on onion-based routing protocols for any type of P2P
-networks and it implements cryptographically secure and anonymous  packet 
-formats, privacy preserving routing protocols and path construction strategies 
-that can be used to enhance network privacy. 
+The primitives implemented by p3lib are based on privacy enhancing tech
+research. For example, we implement a general-purpose onion routing packet
+builder and processor based on Sphinx [1]. We aim at adding more primitives and
+protocols in the future. Stay tuned and [let us know what you'd like to see as part of p3lib](https://github.com/hashmatter/p3lib/issues/18)
+library.
 
-Currently, the protocols and primitives implemented by p3lib are based on 
-research works such as Sphinx [1], HORNET [2] and ShwadowWalker [3]. 
+| Layer | p3lib components | implementation status | audited |
+| --- | --- | --- | --- |
+| Packet format  | `p3lib-sphinx` [1]  | v0.1 | :x: | 
+| Routing  | `p3lib-hornet` [2]  | design stage | - | 
+| Path construction  | `p3lib-shadowwalker` [3]  | design stage | - | 
 
-| Layer | p3lib components |
-| --- | --- |
-| Packet format  | `p3lib-sphinx` [1]  |
-| Routing  | `p3lib-hornet` [2]  |
-| Path construction  | `p3lib-shadowwalker` [3]  |
-
-For more information about each p3lib component, check the [specifications](./specs).
+If you are interested about implementation details and APIs of p3lib components,
+check the [specifications](./specs).
 
 ### Privacy design
 

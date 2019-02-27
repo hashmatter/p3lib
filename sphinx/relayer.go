@@ -27,14 +27,23 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byt
 	var emptyAddr ma.Multiaddr
 	var finalPayload []byte
 
-	// TODO: first verify if group element is part of the curve. this is very
+	// TODO: generalize curve to use othe sensible options
+	curve := ec.P256()
+	header := packet.Header
+
+	// first verify if group element is part of the expected curve. this is very
 	// important to avoid ECC twist security attacks
+	gElement := &header.GroupElement
+	isOnCurve := curve.Params().IsOnCurve(gElement.X, gElement.Y)
+	if isOnCurve == false {
+		return emptyAddr, &Packet{}, []byte{},
+			fmt.Errorf("Potential ECC attack! Group element is not on the expected curve.")
+	}
 
 	// TODO: check payload (i.e.packet) HMAC
 
 	sessionKey := r.privKey
-	header := packet.Header
-	sKey := scrypto.GenerateECDHSharedSecret(&header.GroupElement, sessionKey)
+	sKey := scrypto.GenerateECDHSharedSecret(gElement, sessionKey)
 
 	// checks if packet has been processed based on the derived secret key
 	tag := sha256.Sum256([]byte(sKey[:]))
@@ -56,7 +65,6 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byt
 	}
 
 	// blind next group element
-	curve := ec.P256()
 	var blindingF scrypto.Hash256
 	blindingF = scrypto.ComputeBlindingFactor(&header.GroupElement, sKey)
 	newGroupElement := blindGroupElement(&header.GroupElement, blindingF[:], curve)
@@ -134,7 +142,7 @@ func bytesToAddr(b []byte) (ma.Multiaddr, error) {
 	// IPv4 address
 	case 4:
 		addr, err = ma.NewMultiaddrBytes(b[:9])
-		// TODO: hack.  how to parse this properly?
+		// TODO: ugly hack. open issue in multiformats/go-multiaddress
 		if err != nil {
 			addr, err = ma.NewMultiaddrBytes(b[:8])
 		}
