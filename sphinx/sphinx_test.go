@@ -20,8 +20,9 @@ func TestEndToEnd(t *testing.T) {
 	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
 	relayAddrsString := []string{
 		"/ip4/127.0.0.1/udp/1234",
-		"/ip4/198.162.0.1/tcp/4321",
-		"/ip6/2607:f8b0:4003:c00::6a/udp/5678",
+		"/ip6/2607:f8b0:4003:c01::6a/udp/5678",
+		"/ip4/120.120.0.2/tcp/1221",
+		//"/ip4/120.120.0.2/tcp/1222",
 	}
 	relayAddrs := make([]ma.Multiaddr, numRelays)
 
@@ -65,8 +66,6 @@ func TestEndToEnd(t *testing.T) {
 		return
 	}
 
-	fmt.Println(packet1)
-
 	// relay 1 processes the header
 	r1 := NewRelayerCtx(&circuitPrivKeys[1])
 	nextAddr, packet2, _, err := r1.ProcessPacket(packet1)
@@ -75,7 +74,7 @@ func TestEndToEnd(t *testing.T) {
 		return
 	}
 
-	if nextAddr != relayAddrs[3] {
+	if nextAddr.String() != relayAddrs[2].String() {
 		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[2])
 		return
 	}
@@ -88,32 +87,16 @@ func TestEndToEnd(t *testing.T) {
 		return
 	}
 
-	lastHmac := packet3.RoutingInfoMac
-	lastAddr := packet3.RoutingInfo
-
-	if nextAddr != relayAddrs[3] {
-		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[3])
+	if nextAddr.String() != finalAddr.String() {
+		t.Errorf("NextAddr (which is the last) is incorrect (%v != %v)",
+			nextAddr, finalAddr)
 		return
 	}
 
-	// TODO: how do relayers know if it they are last relay? Do they need to??
-
-	// also verify if header mac is all nil
-	for _, b := range lastHmac {
-		if b != 0 {
-			t.Errorf("Final hmac should be all 0s, got %v", lastHmac)
-			break
-		}
+	if packet3.IsLast() != true {
+		t.Errorf("Packet should be final, hmac must be all 0s, got %v", packet3.RoutingInfoMac)
 	}
 
-	// address in final packet should match the final address which the packet was
-	// constructed with
-	for i, b := range lastAddr {
-		if b != finalAddr.Bytes()[i] {
-			t.Errorf("Final addresses do not match: finalAddr (%v) != header.RoutingInfoMac (%v) ", finalAddr, lastAddr)
-			break
-		}
-	}
 }
 
 func TestNewHeader(t *testing.T) {
