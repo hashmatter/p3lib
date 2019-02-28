@@ -12,8 +12,9 @@ import (
 	"math/big"
 )
 
-// TODO: in the future, allow for more number of hops. when that is the case,
-// migrate these constants into configurations with sensible defaults
+// TODO: in the future, allow fora variable number of hops adn variable payload
+// size. when implementing this, migrate these constants into configurations
+// with sensible defaults
 const (
 
 	// security parameter in bytes, defines the length of the symmetric key.
@@ -25,10 +26,6 @@ const (
 	// protocol (ip4 or ip6), 1 byte for transport protocol and 2 bytes for
 	// optional port
 	addrSize = 21
-
-	// size in bytes of the encoded group element (1 + 2*curve_bit_size). this
-	// const is for P256
-	groupElementSize = 513
 
 	// max number of hops per circuit
 	numMaxRelays = 5
@@ -125,6 +122,53 @@ func (p *Packet) IsLast() bool {
 	return true
 }
 
+type P struct {
+	V  byte
+	H  []byte
+	P  [payloadSize]byte
+	Pm [hmacSize]byte
+}
+
+func (p *Packet) GobEncode() ([]byte, error) {
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+
+	he, err := p.Header.GobEncode()
+	if err != nil {
+		return []byte{}, err
+	}
+
+	err = enc.Encode(P{H: he, P: p.Payload, Pm: p.PacketMac})
+	if err != nil {
+		return []byte{}, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (p *Packet) GobDecode(raw []byte) error {
+	r := bytes.NewReader(raw)
+	dec := gob.NewDecoder(r)
+	var pbuf P
+	err := dec.Decode(&pbuf)
+	if err != nil {
+		return err
+	}
+
+	var header Header
+	header.GobDecode(pbuf.H)
+
+	var payload [payloadSize]byte
+	copy(payload[:], pbuf.P[:])
+	var packetMac [hmacSize]byte
+	copy(packetMac[:], pbuf.Pm[:])
+
+	p.Payload = payload
+	p.Header = &header
+	p.PacketMac = packetMac
+	p.Version = pbuf.V
+	return nil
+}
+
 // encrypts payload in several layers using the shared secrets "agreed" with the
 // relayers. the payload will be "peeled" as the packet traversed the circuit
 // TODO: refactor to allow using other ciphers than chacha20
@@ -150,17 +194,6 @@ type Header struct {
 	GroupElement   ecdsa.PublicKey
 	RoutingInfo    [routingInfoSize]byte
 	RoutingInfoMac [hmacSize]byte
-}
-
-func (h *Header) String() string {
-	var out []string
-	out = append(out, fmt.Sprintf("------ HEADER\n"))
-	out = append(out, fmt.Sprintf(">> group element: %v\n", h.GroupElement))
-	out = append(out, fmt.Sprintf(">> routing info mac: %v\n", h.RoutingInfoMac))
-	out = append(out, fmt.Sprintf(">> routing info: %v ... %v\n",
-		h.RoutingInfo[:16], h.RoutingInfo[routingInfoSize-16:]))
-	out = append(out, fmt.Sprintf("------ \n"))
-	return string(out[0] + out[1] + out[2] + out[3] + out[4])
 }
 
 func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
@@ -230,18 +263,6 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 
 		// set next address
 		copy(addr[:], circuitAddrs[i].Bytes())
-
-		// TODO: REMOVE
-		if i == 2 {
-			var out []string
-			out = append(out, fmt.Sprintf("------ HEADER\n"))
-			//out = append(out, fmt.Sprintf(">> group element: %v\n", gElement))
-			out = append(out, fmt.Sprintf(">> routing info mac: %v\n", hmac))
-			out = append(out, fmt.Sprintf(">> routing info: %v\n", routingInfo))
-			out = append(out, fmt.Sprintf("------ \n"))
-			//fmt.Println(out)
-		}
-
 	}
 
 	return &Header{sessionKey.PublicKey, routingInfo, hmac}, nil
@@ -262,6 +283,52 @@ func validateHeaderInput(numRelays int, addr []byte) []error {
 			len(addr)))
 	}
 	return errs
+}
+
+type H struct {
+	Ge  []byte
+	Ri  [routingInfoSize]byte
+	Rim [hmacSize]byte
+}
+
+func (h *Header) GobEncode() ([]byte, error) {
+	buf := &bytes.Buffer{}
+	enc := gob.NewEncoder(buf)
+
+	pk := h.GroupElement
+	element := ec.Marshal(pk.Curve, pk.X, pk.Y)
+	err := enc.Encode(H{Ge: element, Ri: h.RoutingInfo, Rim: h.RoutingInfoMac})
+	if err != nil {
+		return nil, fmt.Errorf("Err encoding header: %s", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func (h *Header) GobDecode(raw []byte) error {
+	r := bytes.NewReader(raw)
+	dec := gob.NewDecoder(r)
+
+	var hb H
+	err := dec.Decode(&hb)
+	if err != nil {
+		return fmt.Errorf("Err decoding header: %s", err)
+	}
+
+	// TODO: parameterize this to allow for diff curves
+	// TODO: maybe we could economize some bytes by encoding the curve's points
+	// more intellegently?
+	curve := ec.P256()
+	x, y := ec.Unmarshal(curve, hb.Ge)
+
+	if x == big.NewInt(0) {
+		return fmt.Errorf("Err decoding header: group element not using %s curve.", curve.Params().Name)
+	}
+	pubKey := ecdsa.PublicKey{Curve: curve, X: x, Y: y}
+
+	h.GroupElement = pubKey
+	h.RoutingInfo = hb.Ri
+	h.RoutingInfoMac = hb.Rim
+	return nil
 }
 
 func generatePadding(keys []scrypto.Hash256, nonce []byte) ([]byte, error) {
@@ -293,46 +360,6 @@ func (h *Header) Mac(key scrypto.Hash256) []byte {
 	enc := gob.NewEncoder(&buf)
 	enc.Encode(h)
 	return buf.Bytes()
-}
-
-type H struct {
-	Ge []byte
-	Ri [routingInfoSize]byte
-}
-
-func (h *Header) GobEncode() ([]byte, error) {
-	buf := &bytes.Buffer{}
-	enc := gob.NewEncoder(buf)
-
-	pk := h.GroupElement
-	element := ec.Marshal(pk.Curve, pk.X, pk.Y)
-	err := enc.Encode(H{Ge: element, Ri: h.RoutingInfo})
-	if err != nil {
-		return nil, fmt.Errorf("Err encoding header: %s", err)
-	}
-	return buf.Bytes(), nil
-}
-
-func (h *Header) GobDecode(raw []byte) error {
-	r := bytes.NewReader(raw)
-	dec := gob.NewDecoder(r)
-
-	var hb H
-	err := dec.Decode(&hb)
-	if err != nil {
-		return fmt.Errorf("Err decoding header: %s", err)
-	}
-
-	// TODO: parameterize this to allow for diff curves
-	curve := ec.P256()
-	x, y := ec.Unmarshal(curve, hb.Ge)
-	// if x coordinate is (big.Int) 0, the curves do not match
-	if x == big.NewInt(0) {
-		return fmt.Errorf("Err decoding header: group element not using %s curve.", curve.Params().Name)
-	}
-	h.GroupElement = ecdsa.PublicKey{Curve: curve, X: x, Y: y}
-	h.RoutingInfo = hb.Ri
-	return nil
 }
 
 // generates all shared secrets for a given path.

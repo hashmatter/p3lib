@@ -13,6 +13,71 @@ import (
 	"testing"
 )
 
+func TestPacketEncoding(t *testing.T) {
+	numRelays := 2
+	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
+	relayAddrsString := []string{
+		"/ip6/2607:f8b0:4003:c01::6a/udp/5678",
+		"/ip4/127.0.0.1/udp/1234",
+	}
+	relayAddrs := make([]ma.Multiaddr, numRelays)
+
+	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
+	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
+
+	privSender, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
+
+	for i := 0; i < numRelays; i++ {
+		pub, priv := generateHopKeys()
+		circuitPrivKeys[i] = *priv
+		circuitPubKeys[i] = *pub
+		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
+	}
+
+	var payload [payloadSize]byte
+	copy(payload[:], []byte("hello sphinx!"))
+
+	packet, err :=
+		NewPacket(privSender, circuitPubKeys, finalAddr, relayAddrs, payload)
+	if err != nil {
+		t.Errorf("Err packet construction: %v", err)
+		return
+	}
+
+	var buf bytes.Buffer
+
+	// creates encoder, encodes packet and write to buffer buf
+	enc := gob.NewEncoder(&buf)
+	err = enc.Encode(packet)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// TODO: check size of the packet byte stream (must be fixed!)
+
+	// creates decoder, reads bytes from buffer and populates newPacket
+	dec := gob.NewDecoder(&buf)
+	var newPacket Packet
+	err = dec.Decode(&newPacket)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// #TODO impl equal for header? (only necessary for tests though.. ), maybe there
+	// is a smarter way for doing this. also this is ugly af
+	if string(newPacket.Header.RoutingInfo[:]) != string(packet.Header.RoutingInfo[:]) {
+		t.Errorf("Encoded/decoded header.RoutingInfo is not correct: %v != %v",
+			newPacket.Header, packet.Header)
+	}
+
+	if string(newPacket.Payload[:]) != string(packet.Payload[:]) {
+		t.Errorf("Encoded/decoded packet payload is not correct: %v != %v",
+			newPacket.Header, packet.Header)
+	}
+}
+
 // tests the construction and processing of an onion packet with a numRelays
 // size circuit.
 func TestEndToEnd(t *testing.T) {
@@ -238,9 +303,6 @@ func TestGenSharedKeys(t *testing.T) {
 			sk_2, sharedKeys[1]))
 	}
 }
-
-// TODO
-func TestEncodingDecodingPacket(t *testing.T) {}
 
 func TestEncodingDecodingHeader(t *testing.T) {
 	pub, _ := generateHopKeys()

@@ -1,7 +1,7 @@
 language: go
 
 install:
-  - go get .
+  - go get ./sphinx/
 
 go:
   - master
