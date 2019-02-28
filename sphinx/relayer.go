@@ -22,10 +22,9 @@ func NewRelayerCtx(privKey *ecdsa.PrivateKey) *RelayerCtx {
 }
 
 // processes packet in a given relayer context
-func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byte, error) {
+func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, error) {
 	var next Packet
 	var emptyAddr ma.Multiaddr
-	var finalPayload []byte
 
 	// TODO: generalize curve to use othe sensible options
 	curve := ec.P256()
@@ -36,7 +35,7 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byt
 	gElement := &header.GroupElement
 	isOnCurve := curve.Params().IsOnCurve(gElement.X, gElement.Y)
 	if isOnCurve == false {
-		return emptyAddr, &Packet{}, []byte{},
+		return emptyAddr, &Packet{},
 			fmt.Errorf("Potential ECC attack! Group element is not on the expected curve.")
 	}
 
@@ -48,20 +47,28 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byt
 	// checks if packet has been processed based on the derived secret key
 	tag := sha256.Sum256([]byte(sKey[:]))
 	if contains(r.processedTags, tag) {
-		return emptyAddr, &Packet{}, []byte{},
+		return emptyAddr, &Packet{},
 			fmt.Errorf("Packet already processed, discarding. (tag: %x)", tag)
 	}
 
 	r.processedTags = append(r.processedTags, tag)
 
+	// process header
 	nextAddrBytes, nextHmac, nextRoutingInfo, err := processHeader(header, sessionKey, sKey)
 	if err != nil {
-		return emptyAddr, &Packet{}, []byte{}, err
+		return emptyAddr, &Packet{}, err
 	}
 
+	// decrypts payload
+	decryptedPayload, err := decryptPayload(packet.Payload, sKey)
+	if err != nil {
+		return emptyAddr, &Packet{}, err
+	}
+
+	// renders next address
 	nextAddr, err := bytesToAddr(nextAddrBytes[:])
 	if err != nil {
-		return emptyAddr, &Packet{}, []byte{}, err
+		return emptyAddr, &Packet{}, err
 	}
 
 	// blind next group element
@@ -75,16 +82,13 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, []byt
 	nextHeader.RoutingInfo = nextRoutingInfo
 	nextHeader.RoutingInfoMac = nextHmac
 
-	// TODO: decrypt payload
-	decryptPayload := packet.Payload
-
 	next.Version = packet.Version
 	next.Header = &nextHeader
-	next.Payload = decryptPayload
+	next.Payload = decryptedPayload
 
 	// TODO: is packetMAC needed?
 
-	return nextAddr, &next, finalPayload, nil
+	return nextAddr, &next, nil
 }
 
 func processHeader(header *Header, sessionKey *ecdsa.PrivateKey, sKey scrypto.Hash256) ([addrSize]byte, [hmacSize]byte, [routingInfoSize]byte, error) {
@@ -132,6 +136,19 @@ func processHeader(header *Header, sessionKey *ecdsa.PrivateKey, sKey scrypto.Ha
 	copy(nextRoutingInfo[:], ninfo[:])
 
 	return nextAddr, nextHmac, nextRoutingInfo, nil
+}
+
+func decryptPayload(p [payloadSize]byte, ss scrypto.Hash256) ([payloadSize]byte, error) {
+	var resP [payloadSize]byte
+	nonce := defaultNonce()
+	cipher, err := scrypto.GenerateCipherStream(ss[:], nonce, payloadSize)
+	if err != nil {
+		return [payloadSize]byte{}, err
+	}
+
+	decrP, _ := xor(p[:], cipher)
+	copy(resP[:], decrP[:])
+	return resP, nil
 }
 
 func bytesToAddr(b []byte) (ma.Multiaddr, error) {

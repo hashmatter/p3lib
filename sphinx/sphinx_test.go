@@ -39,22 +39,34 @@ func TestEndToEnd(t *testing.T) {
 		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
 	}
 
+	var payload [payloadSize]byte
+	copy(payload[:], []byte("hello sphinx!"))
+
 	// initiator constructs new packet
 	packet0, err :=
-		NewPacket(privSender, circuitPubKeys, finalAddr, relayAddrs)
+		NewPacket(privSender, circuitPubKeys, finalAddr, relayAddrs, payload)
 	if err != nil {
 		t.Errorf("Err packet construction: %v", err)
 		return
 	}
 
-	// TODO: test payload decryption along the circuit somehow
+	// check if paylaod was encrypted
+	if string(packet0.Payload[:]) == string(payload[:]) {
+		t.Errorf("Payload was not successfully ENCRYPTED: %v == %v",
+			packet0.Payload, payload)
+	}
 
 	// relay 0 processes the header
 	r0 := NewRelayerCtx(&circuitPrivKeys[0])
-	nextAddr, packet1, _, err := r0.ProcessPacket(packet0)
+	nextAddr, packet1, err := r0.ProcessPacket(packet0)
 	if err != nil {
 		t.Errorf("Err packet processing: %v", err)
 		return
+	}
+
+	if string(packet1.Payload[:]) == string(payload[:]) {
+		t.Errorf("Payload was not successfully ENCRYPTED: %v == %v",
+			packet1.Payload, payload)
 	}
 
 	if nextAddr.String() != relayAddrs[1].String() {
@@ -69,10 +81,15 @@ func TestEndToEnd(t *testing.T) {
 
 	// relay 1 processes the header
 	r1 := NewRelayerCtx(&circuitPrivKeys[1])
-	nextAddr, packet2, _, err := r1.ProcessPacket(packet1)
+	nextAddr, packet2, err := r1.ProcessPacket(packet1)
 	if err != nil {
 		t.Errorf("Err packet processing: %v", err)
 		return
+	}
+
+	if string(packet2.Payload[:]) == string(payload[:]) {
+		t.Errorf("Payload was not successfully ENCRYPTED: %v == %v",
+			packet2.Payload, payload)
 	}
 
 	if nextAddr.String() != relayAddrs[2].String() {
@@ -82,7 +99,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// relay 2 processes the header
 	r2 := NewRelayerCtx(&circuitPrivKeys[2])
-	nextAddr, packet3, _, err := r2.ProcessPacket(packet2)
+	nextAddr, packet3, err := r2.ProcessPacket(packet2)
 	if err != nil {
 		t.Errorf("Err packet processing: %v", err)
 		return
@@ -90,14 +107,14 @@ func TestEndToEnd(t *testing.T) {
 
 	// relays 3 and 4 process the header
 	r3 := NewRelayerCtx(&circuitPrivKeys[3])
-	_, packet4, _, err := r3.ProcessPacket(packet3)
+	_, packet4, err := r3.ProcessPacket(packet3)
 	if err != nil {
 		t.Errorf("Err packet processing: %v", err)
 		return
 	}
 
 	r4 := NewRelayerCtx(&circuitPrivKeys[4])
-	nextAddr, packet5, _, err := r4.ProcessPacket(packet4)
+	nextAddr, packet5, err := r4.ProcessPacket(packet4)
 	if err != nil {
 		t.Errorf("Err packet processing: %v", err)
 		return
@@ -112,7 +129,10 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("Packet should be final, hmac must be all 0s, got %v", packet3.RoutingInfoMac)
 	}
 
-	t.Error("")
+	if string(packet5.Payload[:]) != string(payload[:]) {
+		t.Errorf("Payload was not successfully recovered by last relay: %v != %v",
+			packet5.Payload, payload)
+	}
 }
 
 func TestNewHeader(t *testing.T) {
@@ -141,8 +161,10 @@ func TestNewHeader(t *testing.T) {
 		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
 	}
 
+	sharedSecrets, err := generateSharedSecrets(circuitPubKeys, *privSender)
+
 	header, err :=
-		constructHeader(privSender, finalAddr, relayAddrs, circuitPubKeys)
+		constructHeader(privSender, finalAddr, relayAddrs, sharedSecrets)
 	if err != nil {
 		t.Error(err)
 	}

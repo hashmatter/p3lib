@@ -47,6 +47,10 @@ const (
 	// size in bytes of shared secret
 	sharedSecretSize = 32
 
+	// packet payload size. this size must be fixed so that all packets keep an
+	// invariant size
+	payloadSize = 256
+
 	// size in bytes of the realm identifier. a real identifier can be any metadata
 	// associeated with the version of the protocol used and us application
 	// specific (ie. any developer can define the real version). The realm byte
@@ -61,28 +65,51 @@ const (
 type Packet struct {
 	Version byte
 	*Header
-	Payload   []byte
+	Payload   [payloadSize]byte
 	PacketMac [hmacSize]byte
 }
 
 func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
-	finalAddr ma.Multiaddr, relayAddrs []ma.Multiaddr) (*Packet, error) {
+	finalAddr ma.Multiaddr, relayAddrs []ma.Multiaddr, payload [payloadSize]byte) (*Packet, error) {
 
 	if len(circuitPubKeys) == 0 {
 		return &Packet{}, errors.New("Err: A set of relay pulic keys must be provided")
 	}
 
-	header, err := constructHeader(sessionKey, finalAddr, relayAddrs, circuitPubKeys)
+	// first, verify if ALL relay group elements are part of the expected curve.
+	// this is very important tp avoid ECC twist security attacks
+	// TODO: generalize curve to use othe sensible options
+	curve := ec.P256()
+	for i, ge := range circuitPubKeys {
+		isOnCurve := curve.Params().IsOnCurve(ge.X, ge.Y)
+		if isOnCurve == false {
+			return &Packet{},
+				fmt.Errorf("Potential ECC attack! Group element of relay [%v] is not on the expected curve:", i)
+		}
+	}
+
+	sharedSecrets, err := generateSharedSecrets(circuitPubKeys, *sessionKey)
+	if err != nil {
+		return &Packet{}, fmt.Errorf("Shared secrets generation: %v", err)
+	}
+
+	header, err := constructHeader(sessionKey, finalAddr, relayAddrs, sharedSecrets)
 	if err != nil {
 		return &Packet{}, err
 	}
 
+	encPayload, err := encryptPayload(payload, sharedSecrets)
+	if err != nil {
+		return &Packet{}, fmt.Errorf("Encrypting payload: %v", err)
+	}
+
+	// TODO: generate packetMac; do we need another MAC besides header MAC?
 	var packetMac [hmacSize]byte
-	// TODO: calculate packetMac
 
 	return &Packet{
 		Version:   defRealm,
 		Header:    header,
+		Payload:   encPayload,
 		PacketMac: packetMac,
 	}, nil
 }
@@ -96,6 +123,27 @@ func (p *Packet) IsLast() bool {
 		}
 	}
 	return true
+}
+
+// encrypts payload in several layers using the shared secrets "agreed" with the
+// relayers. the payload will be "peeled" as the packet traversed the circuit
+// TODO: refactor to allow using other ciphers than chacha20
+func encryptPayload(payload [payloadSize]byte,
+	sharedKeys []scrypto.Hash256) ([payloadSize]byte, error) {
+
+	numRelayers := len(sharedKeys)
+	// TODO: SEC using same nonce as in Header?
+	nonce := defaultNonce()
+
+	for i := numRelayers - 1; i >= 0; i-- {
+		cipher, err := scrypto.GenerateCipherStream(sharedKeys[i][:], nonce, payloadSize)
+		if err != nil {
+			return [payloadSize]byte{}, err
+		}
+		p, _ := xor(payload[:], cipher[:])
+		copy(payload[:], p[:])
+	}
+	return payload, nil
 }
 
 type Header struct {
@@ -116,9 +164,9 @@ func (h *Header) String() string {
 }
 
 func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
-	circuitAddrs []ma.Multiaddr, circuitPubKeys []ecdsa.PublicKey) (*Header, error) {
+	circuitAddrs []ma.Multiaddr, sharedSecrets []scrypto.Hash256) (*Header, error) {
 
-	numRelays := len(circuitPubKeys)
+	numRelays := len(circuitAddrs)
 	defNonce := defaultNonce()
 
 	// TODO: improve verification
@@ -127,24 +175,7 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		return &Header{}, fmt.Errorf("Header validation errors %v", validationErrs)
 	}
 
-	// first, verify if ALL relay group elements are part of the expected curve.
-	// this is very important tp avoid ECC twist security attacks
-	// TODO: generalize curve to use othe sensible options
-	curve := ec.P256()
-	for i, ge := range circuitPubKeys {
-		isOnCurve := curve.Params().IsOnCurve(ge.X, ge.Y)
-		if isOnCurve == false {
-			return &Header{},
-				fmt.Errorf("Potential ECC attack! Group element of relay [%v] is not on the expected curve:", i)
-		}
-	}
-
-	sKeys, err := generateSharedSecrets(circuitPubKeys, *sessionKey)
-	if err != nil {
-		return &Header{}, fmt.Errorf("Header construction: %v", err)
-	}
-
-	padding, err := generatePadding(sKeys, defNonce)
+	padding, err := generatePadding(sharedSecrets, defNonce)
 	if err != nil {
 		return &Header{}, fmt.Errorf("Header construction: %v", err)
 	}
@@ -161,8 +192,8 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 
 	for i := numRelays - 1; i >= 0; i-- {
 		// generate keys for obfuscate routing info and for generate header HMAC
-		encKey := generateEncryptionKey(sKeys[i][:], encryptionKey)
-		macKey := generateEncryptionKey(sKeys[i][:], hashKey)
+		encKey := generateEncryptionKey(sharedSecrets[i][:], encryptionKey)
+		macKey := generateEncryptionKey(sharedSecrets[i][:], hashKey)
 
 		// first iteration does not need shift right
 		if i != numRelays-1 {
