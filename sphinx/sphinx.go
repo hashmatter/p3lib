@@ -75,7 +75,6 @@ func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 
 	// first, verify if ALL relay group elements are part of the expected curve.
 	// this is very important tp avoid ECC twist security attacks
-	// TODO: generalize curve to use othe sensible options
 	curve := ec.P256()
 	for i, ge := range circuitPubKeys {
 		isOnCurve := curve.Params().IsOnCurve(ge.X, ge.Y)
@@ -100,7 +99,6 @@ func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 		return &Packet{}, fmt.Errorf("Encrypting payload: %v", err)
 	}
 
-	// TODO: generate packetMac; do we need another MAC besides header MAC?
 	var packetMac [hmacSize]byte
 
 	return &Packet{
@@ -171,12 +169,10 @@ func (p *Packet) GobDecode(raw []byte) error {
 
 // encrypts payload in several layers using the shared secrets "agreed" with the
 // relayers. the payload will be "peeled" as the packet traversed the circuit
-// TODO: refactor to allow using other ciphers than chacha20
 func encryptPayload(payload [payloadSize]byte,
 	sharedKeys []scrypto.Hash256) ([payloadSize]byte, error) {
 
 	numRelayers := len(sharedKeys)
-	// TODO: SEC using same nonce as in Header?
 	nonce := defaultNonce()
 
 	for i := numRelayers - 1; i >= 0; i-- {
@@ -202,7 +198,6 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 	numRelays := len(circuitAddrs)
 	defNonce := defaultNonce()
 
-	// TODO: improve verification
 	validationErrs := validateHeaderInput(numRelays, ad.Bytes())
 	if len(validationErrs) != 0 {
 		return &Header{}, fmt.Errorf("Header validation errors %v", validationErrs)
@@ -251,7 +246,7 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		r, _ := xor(routingInfo[:], cipher[:routingInfoSize])
 		copy(routingInfo[:], r[:])
 
-		// if last, then #TODO
+		// #TODO: comment
 		if i == numRelays-1 {
 			copy(routingInfo[len(routingInfo)-len(padding):], padding)
 		}
@@ -271,8 +266,6 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 func validateHeaderInput(numRelays int, addr []byte) []error {
 	var errs []error
 
-	// TODO: verify also if circuit addresses are 1) valid and 2) same size as
-	// circtuiPubkeys
 	if numRelays > numMaxRelays {
 		errs = append(errs, fmt.Errorf("Maximum number of relays is %v, got %v",
 			numMaxRelays, numRelays))
@@ -314,9 +307,6 @@ func (h *Header) GobDecode(raw []byte) error {
 		return fmt.Errorf("Err decoding header: %s", err)
 	}
 
-	// TODO: parameterize this to allow for diff curves
-	// TODO: maybe we could economize some bytes by encoding the curve's points
-	// more intellegently?
 	curve := ec.P256()
 	x, y := ec.Unmarshal(curve, hb.Ge)
 
@@ -372,8 +362,6 @@ func generateSharedSecrets(circuitPubKeys []ecdsa.PublicKey,
 		return []scrypto.Hash256{}, errors.New("Err: A set of relay pulic keys must be provided")
 	}
 	sharedSecrets := make([]scrypto.Hash256, numHops)
-
-	// set initial conditions
 
 	// first group element, which is an ephemeral public key of the sender. The
 	// group element is blinded at each hop
@@ -459,7 +447,6 @@ func shiftRight(buf []byte, n int) []byte {
 	return res
 }
 
-// xor function
 func xor(a, b []byte) ([]byte, int) {
 	n := len(a)
 	dst := make([]byte, n)
@@ -480,7 +467,6 @@ func generateEncryptionKey(k []byte, ktype string) []byte {
 	return scrypto.ComputeMAC(key, []byte(ktype))
 }
 
-//TODO: review security of default nonce in this context
 func defaultNonce() []byte {
 	nonce := make([]byte, 24)
 	return nonce[:]

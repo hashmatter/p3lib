@@ -26,7 +26,6 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, error
 	var next Packet
 	var emptyAddr ma.Multiaddr
 
-	// TODO: generalize curve to use othe sensible options
 	curve := ec.P256()
 	header := packet.Header
 
@@ -38,8 +37,6 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, error
 		return emptyAddr, &Packet{},
 			fmt.Errorf("Potential ECC attack! Group element is not on the expected curve.")
 	}
-
-	// TODO: check payload (i.e.packet) HMAC
 
 	sessionKey := r.privKey
 	sKey := scrypto.GenerateECDHSharedSecret(gElement, sessionKey)
@@ -85,8 +82,6 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, error
 	next.Version = packet.Version
 	next.Header = &nextHeader
 	next.Payload = decryptedPayload
-
-	// TODO: is packetMAC needed?
 
 	return nextAddr, &next, nil
 }
