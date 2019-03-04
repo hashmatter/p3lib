@@ -21,6 +21,12 @@ func NewRelayerCtx(privKey *ecdsa.PrivateKey) *RelayerCtx {
 	}
 }
 
+// returns list tags of each of the processed packets by the current relay
+// context
+func (r *RelayerCtx) ListProcessedPackets() [][32]byte {
+	return r.processedTags
+}
+
 // processes packet in a given relayer context
 func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, error) {
 	var next Packet

@@ -12,19 +12,11 @@ import (
 	"math/big"
 )
 
-// TODO: in the future, allow fora variable number of hops adn variable payload
-// size. when implementing this, migrate these constants into configurations
-// with sensible defaults
 const (
-
-	// security parameter in bytes, defines the length of the symmetric key.
-	secK = 16
-
-	// size in bytes of MAC used to verify integrity of packet
+	// size in bytes of MAC used to verify integrity of header and packet payload
 	hmacSize = 32
 
-	// protocol (ip4 or ip6), 1 byte for transport protocol and 2 bytes for
-	// optional port
+	// size in bytes for the address of relays and final destination.
 	addrSize = 21
 
 	// max number of hops per circuit
@@ -55,17 +47,30 @@ const (
 	realmSize = 1
 	defRealm  = byte(1)
 
+	// key used to generate cipher stream used to obfuscate the header and
+	// payload
 	encryptionKey = "encryption"
-	hashKey       = "hash"
+
+	// key used to generate cipher stream to calculate hash signature of header
+	// and payload
+	hashKey = "hash"
 )
 
 type Packet struct {
 	Version byte
 	*Header
+
+	// packet payload has a fixed size and is obfuscated at each hop
 	Payload   [payloadSize]byte
 	PacketMac [hmacSize]byte
 }
 
+// NewPacket creates a new packet to be forwarded to the first relay in the
+// secure circuit. It takes an ephemeral session key, the destination
+// information (address and payload) and relay information (public keys and
+// addresses) and constructs a cryptographically secure onion packet. The packet
+// is then encoded and sent over the wire to the first relay. This is the entry
+// point function for an initiator to construct a onion circuit.
 func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 	finalAddr ma.Multiaddr, relayAddrs []ma.Multiaddr, payload [payloadSize]byte) (*Packet, error) {
 
@@ -109,7 +114,9 @@ func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 	}, nil
 }
 
-// checks if packet is last
+// checks if packet is last in the path. this is verified by inspecting the
+// hash of the routing information of the packet's header. if the hash is all
+// zeroes, then the current relayer is an exit relay.
 func (p *Packet) IsLast() bool {
 	hmac := p.Header.RoutingInfoMac
 	for _, b := range hmac {
@@ -120,6 +127,7 @@ func (p *Packet) IsLast() bool {
 	return true
 }
 
+// Packet encoding auxiliar data structure and logic
 type P struct {
 	V  byte
 	H  []byte
@@ -167,8 +175,9 @@ func (p *Packet) GobDecode(raw []byte) error {
 	return nil
 }
 
-// encrypts payload in several layers using the shared secrets "agreed" with the
-// relayers. the payload will be "peeled" as the packet traversed the circuit
+// encrypts packet payload in multiple layers using the shared secrets derived
+//from the relayers' public keys. the payload will be "peeled" as the packet
+// traversed the circuit
 func encryptPayload(payload [payloadSize]byte,
 	sharedKeys []scrypto.Hash256) ([payloadSize]byte, error) {
 

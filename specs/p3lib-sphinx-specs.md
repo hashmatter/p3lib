@@ -2,9 +2,7 @@
 
 `p3lib-sphinx` implements the sphinx packet format as defined by [1]. This
 package implements the data structures and primitives for creating, relaying and
-verifying sphinx packets for onion routing and mix-networks. The first version
-(v0.1) of the package is highly inspired on the Sphinx onion routing 
-implementation by Lightning Network routing protocol [2].
+verifying sphinx packets for onion routing and mix-networks.:w
 
 ## Protocol overview
 
@@ -43,22 +41,6 @@ cryptography defaults and it is calculated by the formula:
 
 For version `v0.1`, the size of an header is `33 + (2 * 5 * 16) = 193` bytes
 
-
-```
-Header:
-
-+---------------+---------------------------+
-| Group Element |          Payload          |
-+---------------+---------------------------+
-| pub_key       | enc(payload_relay_1, sk1) |
-|               | enc(payload_relay_2, sk2) |
-|               | enc(payload_relay_3, sk3) |
-|               | enc(payload_relay_4, sk4) |
-|               | enc(payload_relay_5, sk5) |
-+---------------+---------------------------+
-```
-
-
 ### Packet
 
 A sphinx packet wraps the encrypted layers for each of the relays to decrypt and
@@ -93,18 +75,57 @@ A packet payload has a fixed lenght of 256 bytes.
 A sphinx packet is  `193 + 1 + 245 + 256 = 695` bytes long. This means that for
 each 256 bytes transmitted, there is an overhead of 450 bytes.
 
-```
-Packet:
+**API**
 
-+--------+------------+------------------+---------+---------+
-| Header | Header MAC |   Routing Info   | Version | Payload |
-+--------+------------+------------------+---------+---------+
-|        | hmac_1     | addr_relay_2     |         |         |
-|        | hmac_2     | addr_relay_3     |         |         |
-|        | hmac_3     | addr_relay_4     |         |         |
-|        | hmac_4     | addr_relay_5     |         |         |
-|        | hmac_5     | final_addr       |         |         |
-+--------+------------+------------------+---------+---------+
+1) Create and encode packet
+
+``` go
+// creates a new packet
+packet, _ := 
+	NewPacket(sessionKey, circuitPubKeys, finalAddr, relaysAddrs, payload)
+
+// encodes packet and writes it to a network buffer to be sent over the wire 
+// to the next relay
+var network bytes.Buffer
+enc := gob.NewEncoder(&network)
+_ = enc.Encode(packet)
+```
+
+2) Receive, decode and process packet
+
+``` go
+// initiates the relay context used to process the packet
+ctx := NewRelayerCtx(privKey)
+
+// decodes bytes from network into packet
+dec := gob.NewDecoder(&network)
+var packet Packet
+_ = dec.Decode(&newPacket)
+
+// processes packet in the relayer context
+nextAddr, nextPacket, _ := ctx.ProcessPacket(packet)
+
+// checks if packet resulting from the packet processing is last
+if isLast := nextPacket.IsLast(); isLast == true {
+	
+	// if packet is last, forward payload to destination
+	forwardToDestination(nextAddr, nextPacket)
+	return
+}
+
+// if packet is not last, forward it to next relay
+forwardToRelay(nextAddr, nextPacket)
+```
+
+3) Check relay context state
+
+``` go
+ctx := NewRelayerCtx(privKey)
+
+// ...
+
+// gets all the tags of the processed packets
+tags := ctx.ListProcessedPackets()
 ```
 
 ## Cryptography
@@ -114,9 +135,14 @@ of the Sphinx and integrity verification.
 
 ### Key Generation 
 
-- `rho`: key generation to be used by the PRG for data obfuscation at each hop.
-  Default hash function: `SHA256-MAC-128`;
-- `mu`: key generation for HMAC (Default hash function: `SHA256-MAC-128`);
+- `encryption`: string which converted to byte stream is used as key for data 
+obfuscation at each hop.
+
+- `hash`: string which converted to byte stream is used as key for calculating
+header and payload MAC
+
+The default hash function used in the current version is `SHA256-MAC-128`. In
+the future, the developer may use other sensible hash functions.
 
 ### PRG obfuscation
 
@@ -127,17 +153,6 @@ encrypt the packet is `ChaCha20` initialized with a `0x00` byte stream and the
 hop's shared secret. (Security note: it is secure to use a fixed nonce since the
 shared key is never reused).
 
-## API
-
-> to define
-
-## Constants
-
-> to finish
-
 ### References
 
 - [1] [Sphinx: A Compact and Provably Secure Mix Format](https://www.cypherpunks.ca/~iang/pubs/SphinxOR.pdf)
-
-- [2] [Lightning Network onion routing specs](https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md)
-
