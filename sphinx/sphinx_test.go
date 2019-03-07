@@ -8,20 +8,18 @@ import (
 	"encoding/gob"
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
-	ma "github.com/multiformats/go-multiaddr"
 	"math/big"
 	"testing"
 )
 
 func TestPacketEncoding(t *testing.T) {
 	numRelays := 2
-	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
-	relayAddrsString := []string{
-		"/ip6/2607:f8b0:4003:c01::6a/udp/5678",
-		"/ip4/127.0.0.1/udp/1234",
+	finalAddr := []byte("/ip4/127.0.0.1/udp/1234")
+	relayAddrs := [][]byte{
+		[]byte("/ip6/2607:f8b0:4003:c01::6a/udp/5678"),
+		[]byte("/ip4/127.0.0.1/tcp/50234"),
+		//[]byte("/ip4/127.0.0.1/udp/1234"),
 	}
-	relayAddrs := make([]ma.Multiaddr, numRelays)
-
 	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
 	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
 
@@ -31,7 +29,6 @@ func TestPacketEncoding(t *testing.T) {
 		pub, priv := generateHopKeys()
 		circuitPrivKeys[i] = *priv
 		circuitPubKeys[i] = *pub
-		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
 	}
 
 	var payload [payloadSize]byte
@@ -82,15 +79,14 @@ func TestPacketEncoding(t *testing.T) {
 // size circuit.
 func TestEndToEnd(t *testing.T) {
 	numRelays := 5
-	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
-	relayAddrsString := []string{
-		"/ip6/2607:f8b0:4003:c01::6a/udp/5678",
-		"/ip4/127.0.0.1/udp/1234",
-		"/ip4/120.120.0.2/tcp/1221",
-		"/ip4/120.120.0.2/tcp/1222",
-		"/ip6/2607:f8b0:4003:c01::6a/udp/5678",
+	finalAddr := []byte("/ip6/2607:f8b0:4003:c01::6a/udp/5678#000000000")
+	relayAddrs := [][]byte{
+		[]byte("QmQV4LdB3jDKEZxB1EGoutUYyRSt8H8oW4B6DoBLB9z6b7"),
+		[]byte("/ip4/127.0.0.1/udp/1234#0000000000000000000000"),
+		[]byte("QmPxawpH7ymXENBZcbKpV3NTxMc4fs37gmREn8e9C2kgNe"),
+		[]byte("/ip4/120.120.0.2/tcp/1222#00000000000000000000"),
+		[]byte("/ip6/2607:f8b0:4003:c01::6a/udp/5678#000000000"),
 	}
-	relayAddrs := make([]ma.Multiaddr, numRelays)
 
 	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
 	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
@@ -101,7 +97,6 @@ func TestEndToEnd(t *testing.T) {
 		pub, priv := generateHopKeys()
 		circuitPrivKeys[i] = *priv
 		circuitPubKeys[i] = *pub
-		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
 	}
 
 	var payload [payloadSize]byte
@@ -134,8 +129,9 @@ func TestEndToEnd(t *testing.T) {
 			packet1.Payload, payload)
 	}
 
-	if nextAddr.String() != relayAddrs[1].String() {
-		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[1])
+	if string(nextAddr[:]) != string(relayAddrs[1]) {
+		t.Errorf("NextAddr is incorrect (%v != %v)", string(nextAddr[:]),
+			string(relayAddrs[1]))
 		return
 	}
 
@@ -157,7 +153,7 @@ func TestEndToEnd(t *testing.T) {
 			packet2.Payload, payload)
 	}
 
-	if nextAddr.String() != relayAddrs[2].String() {
+	if string(nextAddr[:]) != string(relayAddrs[2]) {
 		t.Errorf("NextAddr is incorrect (%v != %v)", nextAddr, relayAddrs[2])
 		return
 	}
@@ -184,7 +180,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("Err packet processing: %v", err)
 		return
 	}
-	if nextAddr.String() != finalAddr.String() {
+	if string(nextAddr[:]) != string(finalAddr) {
 		t.Errorf("NextAddr (which is the last) is incorrect (%v != %v)",
 			nextAddr, finalAddr)
 		return
@@ -202,16 +198,14 @@ func TestEndToEnd(t *testing.T) {
 
 func TestNewHeader(t *testing.T) {
 	numRelays := 4
-	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
-	relayAddrsString := []string{
-		"/ip4/127.0.0.1/udp/1234",
-		"/ip4/198.162.0.1/tcp/4321",
-		"/ip6/2607:f8b0:4003:c00::6a/udp/5678",
-		// used if numRelay > 3
-		"/ip4/198.162.0.2/tcp/4321",
-		"/ip4/198.162.0.3/tcp/4321",
+	finalAddr := []byte("QmZrXVN6xNkXYqFharGfjG6CjdE3X85werKm8AyMdqsQKS")
+	relayAddrs := [][]byte{
+		[]byte("/ip4/127.0.0.1/udp/1234#0000000000000000000000"),
+		[]byte("QmSFXZRzh6ZdpWXXQQ2mkYtx3ns39ZPtWgQJ7sSqStiHZH"),
+		[]byte("/ip6/2607:f8b0:4003:c00::6a/udp/5678#000000000"),
+		[]byte("/ip4/198.162.0.2/tcp/4321#00000000000000000000"),
+		//[]byte("/ip4/198.162.0.3/tcp/4321"),
 	}
-	relayAddrs := make([]ma.Multiaddr, numRelays)
 
 	circuitPrivKeys := make([]ecdsa.PrivateKey, numRelays)
 	circuitPubKeys := make([]ecdsa.PublicKey, numRelays)
@@ -223,7 +217,6 @@ func TestNewHeader(t *testing.T) {
 		pub, priv := generateHopKeys()
 		circuitPrivKeys[i] = *priv
 		circuitPubKeys[i] = *pub
-		relayAddrs[i], _ = ma.NewMultiaddr(relayAddrsString[i])
 	}
 
 	sharedSecrets, err := generateSharedSecrets(circuitPubKeys, *privSender)
