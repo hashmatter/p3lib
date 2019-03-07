@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
-	ma "github.com/multiformats/go-multiaddr"
 	"math/big"
 )
 
@@ -17,7 +16,7 @@ const (
 	hmacSize = 32
 
 	// size in bytes for the address of relays and final destination.
-	addrSize = 21
+	addrSize = 46
 
 	// max number of hops per circuit
 	numMaxRelays = 5
@@ -72,7 +71,7 @@ type Packet struct {
 // is then encoded and sent over the wire to the first relay. This is the entry
 // point function for an initiator to construct a onion circuit.
 func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
-	finalAddr ma.Multiaddr, relayAddrs []ma.Multiaddr, payload [payloadSize]byte) (*Packet, error) {
+	finalAddr []byte, relayAddrs [][]byte, payload [payloadSize]byte) (*Packet, error) {
 
 	if len(circuitPubKeys) == 0 {
 		return &Packet{}, errors.New("Err: A set of relay pulic keys must be provided")
@@ -201,13 +200,13 @@ type Header struct {
 	RoutingInfoMac [hmacSize]byte
 }
 
-func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
-	circuitAddrs []ma.Multiaddr, sharedSecrets []scrypto.Hash256) (*Header, error) {
+func constructHeader(sessionKey *ecdsa.PrivateKey, ad []byte,
+	circuitAddrs [][]byte, sharedSecrets []scrypto.Hash256) (*Header, error) {
 
 	numRelays := len(circuitAddrs)
 	defNonce := defaultNonce()
 
-	validationErrs := validateHeaderInput(numRelays, ad.Bytes())
+	validationErrs := validateHeaderInput(numRelays, ad[:])
 	if len(validationErrs) != 0 {
 		return &Header{}, fmt.Errorf("Header validation errors %v", validationErrs)
 	}
@@ -225,7 +224,7 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 	copy(routingInfo[routingInfoSize-len(padding):], padding)
 
 	// sets destination address
-	copy(addr[:], ad.Bytes())
+	copy(addr[:], ad[:])
 
 	for i := numRelays - 1; i >= 0; i-- {
 		// generate keys for obfuscate routing info and for generate header HMAC
@@ -266,7 +265,7 @@ func constructHeader(sessionKey *ecdsa.PrivateKey, ad ma.Multiaddr,
 		copy(hmac[:], scrypto.ComputeMAC(hKey, routingInfo[:]))
 
 		// set next address
-		copy(addr[:], circuitAddrs[i].Bytes())
+		copy(addr[:], circuitAddrs[i][:])
 	}
 
 	return &Header{sessionKey.PublicKey, routingInfo, hmac}, nil

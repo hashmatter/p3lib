@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
-	ma "github.com/multiformats/go-multiaddr"
 )
 
 type RelayerCtx struct {
@@ -28,9 +27,9 @@ func (r *RelayerCtx) ListProcessedPackets() [][32]byte {
 }
 
 // processes packet in a given relayer context
-func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, error) {
+func (r *RelayerCtx) ProcessPacket(packet *Packet) ([addrSize]byte, *Packet, error) {
 	var next Packet
-	var emptyAddr ma.Multiaddr
+	var emptyAddr [addrSize]byte
 
 	curve := ec.P256()
 	header := packet.Header
@@ -57,19 +56,13 @@ func (r *RelayerCtx) ProcessPacket(packet *Packet) (ma.Multiaddr, *Packet, error
 	r.processedTags = append(r.processedTags, tag)
 
 	// process header
-	nextAddrBytes, nextHmac, nextRoutingInfo, err := processHeader(header, sessionKey, sKey)
+	nextAddr, nextHmac, nextRoutingInfo, err := processHeader(header, sessionKey, sKey)
 	if err != nil {
 		return emptyAddr, &Packet{}, err
 	}
 
 	// decrypts payload
 	decryptedPayload, err := decryptPayload(packet.Payload, sKey)
-	if err != nil {
-		return emptyAddr, &Packet{}, err
-	}
-
-	// renders next address
-	nextAddr, err := bytesToAddr(nextAddrBytes[:])
 	if err != nil {
 		return emptyAddr, &Packet{}, err
 	}
@@ -150,28 +143,6 @@ func decryptPayload(p [payloadSize]byte, ss scrypto.Hash256) ([payloadSize]byte,
 	decrP, _ := xor(p[:], cipher)
 	copy(resP[:], decrP[:])
 	return resP, nil
-}
-
-func bytesToAddr(b []byte) (ma.Multiaddr, error) {
-	var addr ma.Multiaddr
-	var err error
-
-	switch b[0] {
-	// IPv4 address
-	case 4:
-		addr, err = ma.NewMultiaddrBytes(b[:9])
-		// TODO: ugly hack. open issue in multiformats/go-multiaddress
-		if err != nil {
-			addr, err = ma.NewMultiaddrBytes(b[:8])
-		}
-	// IPv6 address
-	case 41:
-		addr, err = ma.NewMultiaddrBytes(b[:21])
-	default:
-		return addr, fmt.Errorf("invalid bytes addr (%v) %v", b[0], b)
-	}
-
-	return addr, err
 }
 
 func contains(s [][32]byte, e [32]byte) bool {
