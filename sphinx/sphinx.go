@@ -60,8 +60,7 @@ type Packet struct {
 	*Header
 
 	// packet payload has a fixed size and is obfuscated at each hop
-	Payload   [payloadSize]byte
-	PacketMac [hmacSize]byte
+	Payload [payloadSize]byte
 }
 
 // NewPacket creates a new packet to be forwarded to the first relay in the
@@ -103,13 +102,10 @@ func NewPacket(sessionKey *ecdsa.PrivateKey, circuitPubKeys []ecdsa.PublicKey,
 		return &Packet{}, fmt.Errorf("Encrypting payload: %v", err)
 	}
 
-	var packetMac [hmacSize]byte
-
 	return &Packet{
-		Version:   defRealm,
-		Header:    header,
-		Payload:   encPayload,
-		PacketMac: packetMac,
+		Version: defRealm,
+		Header:  header,
+		Payload: encPayload,
 	}, nil
 }
 
@@ -143,7 +139,7 @@ func (p *Packet) GobEncode() ([]byte, error) {
 		return []byte{}, err
 	}
 
-	err = enc.Encode(P{H: he, P: p.Payload, Pm: p.PacketMac})
+	err = enc.Encode(P{H: he, P: p.Payload})
 	if err != nil {
 		return []byte{}, err
 	}
@@ -164,12 +160,9 @@ func (p *Packet) GobDecode(raw []byte) error {
 
 	var payload [payloadSize]byte
 	copy(payload[:], pbuf.P[:])
-	var packetMac [hmacSize]byte
-	copy(packetMac[:], pbuf.Pm[:])
 
 	p.Payload = payload
 	p.Header = &header
-	p.PacketMac = packetMac
 	p.Version = pbuf.V
 	return nil
 }
