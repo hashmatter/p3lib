@@ -1,6 +1,6 @@
 # p3lib
 
-[![Build Status](https://travis-ci.org/hashmatter/p3lib.svg?branch=master)](https://travis-ci.org/hashmatter/p3lib) ![Version](https://img.shields.io/badge/version-0.1-blue.svg?style=for-the-badge)
+[![Build Status](https://travis-ci.org/hashmatter/p3lib.svg?branch=master?style=for-the-badge)](https://travis-ci.org/hashmatter/p3lib) ![Version](https://img.shields.io/badge/version-0.1-blue.svg?style=for-the-badge)
 
 **The toolbox for engineers to enhance privacy in P2P networks**
 
@@ -9,16 +9,14 @@ routing and messaging in P2P networks. It's basically plug-and-play privacy for
 your decentralized and distributed systems.
 
 The primitives implemented by p3lib are based on privacy enhancing tech
-research. For example, we implement a general-purpose onion routing packet
-builder and processor based on Sphinx [1]. We aim at adding more primitives and
+research. As an example, `p3lib-sphinx` implements a general-purpose onion routing packet
+construction and processor based on Sphinx [1]. p3lib aims at adding more primitives and
 protocols in the future. Stay tuned and [let us know what you'd like to see as part of p3lib](https://github.com/hashmatter/p3lib/issues/18)
 library.
 
 | Layer | p3lib components | implementation status | audited |
 | --- | --- | --- | --- |
 | Packet format  | `p3lib-sphinx` [1]  | v0.1 | :x: | 
-| Routing  | `p3lib-hornet` [2]  | design stage | - | 
-| Path construction  | `p3lib-shadowwalker` [3]  | design stage | - | 
 
 If you are interested about implementation details and APIs of p3lib components,
 check the [specifications](./specs).
@@ -37,10 +35,6 @@ Open an issue or [let's have a chat](https://twitter.com/gpestana)!.
 ### References
 
 [1] [Sphinx: A Compact and Provably Secure Mix Format](https://www.cypherpunks.ca/~iang/pubs/SphinxOR.pdf)
-
-[2] [HORNET: High-speed Onion Routing at the Network Layer](https://dl.acm.org/citation.cfm?id=2813628)
-
-[3] [ShadowWalker: Peer-to-peer Anonymous Communication Using Redundant Structured Topologies](https://dl.acm.org/citation.cfm?id=1653683&dl=ACM&coll=DL)
 
 ### Contributing
 
