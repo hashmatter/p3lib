@@ -18,7 +18,7 @@ library.
 | --- | --- | --- |
 | Packet format  | `p3lib-sphinx` [1]  | v0.1 |
 | Plausible deniability protocol | `p3lib-cfrd` | specs |
-| Octopus lookup | `p3lib-multipathlookup`, `p3lib-shadownode` | specs |
+| Octopus lookup | `p3lib-multipathlookup`, `p3lib-shadownode` [2] | specs |
 
 If you are interested about implementation details and APIs of p3lib components,
 check the [specifications](./specs).
@@ -37,6 +37,7 @@ Open an issue or [let's have a chat](https://twitter.com/gpestana)!.
 ### References
 
 [1] [Sphinx: A Compact and Provably Secure Mix Format](https://www.cypherpunks.ca/~iang/pubs/SphinxOR.pdf)
+
 [2] [Octopus: A Secure and Anonymous DHT Lookup](https://ieeexplore.ieee.org/document/6258005)
 
 ### Contributing
