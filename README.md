@@ -15,7 +15,7 @@ protocols in the future. Stay tuned and [let us know what you'd like to see as p
 library.
 
 | Layer | p3lib components | implementation status |
-| --- | --- | --- | --- |
+| --- | --- | --- |
 | Packet format  | `p3lib-sphinx` [1]  | v0.1 |
 | Plausible deniability protocol | `p3lib-cfrd` | specs |
 | Octopus lookup | `p3lib-multipathlookup`, `p3lib-shadownode` | specs |
