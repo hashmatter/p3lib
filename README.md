@@ -1,6 +1,6 @@
 # p3lib
 
-[![Build Status](https://travis-ci.org/hashmatter/p3lib.svg?branch=master?style=for-the-badge)](https://travis-ci.org/hashmatter/p3lib) ![Version](https://img.shields.io/badge/version-0.1-blue.svg?style=for-the-badge)
+[![Build Status](https://api.travis-ci.org/hashmatter/p3lib.svg)](https://travis-ci.org/hashmatter/p3lib) ![Version](https://img.shields.io/badge/version-0.1-blue.svg)
 
 **The toolbox for engineers to enhance privacy in P2P networks**
 
@@ -14,9 +14,11 @@ construction and processor based on Sphinx [1]. p3lib aims at adding more primit
 protocols in the future. Stay tuned and [let us know what you'd like to see as part of p3lib](https://github.com/hashmatter/p3lib/issues/18)
 library.
 
-| Layer | p3lib components | implementation status | audited |
+| Layer | p3lib components | implementation status |
 | --- | --- | --- | --- |
-| Packet format  | `p3lib-sphinx` [1]  | v0.1 | :x: | 
+| Packet format  | `p3lib-sphinx` [1]  | v0.1 |
+| Plausible deniability protocol | `p3lib-cfrd` | specs |
+| Octopus lookup | `p3lib-multipathlookup`, `p3lib-shadownode` | specs |
 
 If you are interested about implementation details and APIs of p3lib components,
 check the [specifications](./specs).
@@ -35,6 +37,7 @@ Open an issue or [let's have a chat](https://twitter.com/gpestana)!.
 ### References
 
 [1] [Sphinx: A Compact and Provably Secure Mix Format](https://www.cypherpunks.ca/~iang/pubs/SphinxOR.pdf)
+[2] [Octopus: A Secure and Anonymous DHT Lookup](https://ieeexplore.ieee.org/document/6258005)
 
 ### Contributing
 

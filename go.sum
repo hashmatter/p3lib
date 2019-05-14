@@ -1,0 +1,6 @@
+github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da h1:KjTM2ks9d14ZYCvmHS9iAKVt9AyzRSqNU1qabPih5BY=
+github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da/go.mod h1:eHEWzANqSiWQsof+nXEI9bUVUyV6F53Fp89EuCh2EAA=
+github.com/hashmatter/p3lib v0.0.0-20190502104104-37e6f7d714f8 h1:xvSEzoik9EHCIUCOsg01F1EDm9sVl2BLNgYYzKIQ5J4=
+github.com/hashmatter/p3lib v0.0.0-20190502104104-37e6f7d714f8/go.mod h1:HqAI+0k+EDo8j3D1hyttmkbaTJKNXT4zRG9luBgoanU=
+golang.org/x/sys v0.0.0-20190502175342-a43fa875dd82 h1:vsphBvatvfbhlb4PO1BYSr9dzugGxJ/SQHoNufZJq1w=
+golang.org/x/sys v0.0.0-20190502175342-a43fa875dd82/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
