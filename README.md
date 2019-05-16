@@ -17,7 +17,7 @@ library.
 | Layer | p3lib components | implementation status |
 | --- | --- | --- |
 | Packet format  | `p3lib-sphinx` [1]  | v0.1 |
-| Plausible deniability protocol | `p3lib-cfrd` | specs |
+| Plausible deniability DHT lookup | `p3lib-cfrd` | specs |
 | Octopus lookup | `p3lib-multipathlookup`, `p3lib-shadownode` [2] | specs |
 
 If you are interested about implementation details and APIs of p3lib components,
