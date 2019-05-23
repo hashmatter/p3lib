@@ -1,14 +1,13 @@
-package frt
+package fullrt
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 	kb "github.com/libp2p/go-libp2p-kbucket"
-	b58 "github.com/mr-tron/base58/base58"
 )
 
-type RoutingTableProviderRequester interface {
+type RoutingTableProvider interface {
 	// returns local full routing table as a stream of bytes
 	GetRoutingTable() (error, []byte)
 }
@@ -17,17 +16,17 @@ type RoutingTableProviderRequester interface {
 // encoded as byte stream
 type RoutingTableRaw []string
 
-type RTProviderRequester struct {
+type RTProvider struct {
 	routingTable interface{}
 }
 
-func NewRTProviderRequester(rt interface{}) *RTProviderRequester {
-	return &RTProviderRequester{
+func NewRTProvider(rt interface{}) *RTProvider {
+	return &RTProvider{
 		routingTable: rt,
 	}
 }
 
-func (rtp *RTProviderRequester) GetFullRoutingTable() (error, []byte) {
+func (rtp *RTProvider) GetFullRoutingTable() (error, []byte) {
 	rt := rtp.routingTable
 	rtr := RoutingTableRaw{}
 
@@ -40,13 +39,14 @@ func (rtp *RTProviderRequester) GetFullRoutingTable() (error, []byte) {
 	// translate libp2p routing table to raw registry expected by the protocol
 	case *kb.RoutingTable:
 		for _, pid := range r.ListPeers() {
-			rtr = append(rtr, b58.Encode([]byte(pid)))
+			rtr = append(rtr, string(pid))
 		}
 
 	default:
 		return errors.New("Routing table type not recognized"), []byte("")
 	}
 
+	// encodes the routing table
 	var buf []byte
 	buf, err := json.Marshal(rtr)
 	if err != nil {
