@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	frt "github.com/hashmatter/p3lib/fullrt"
 	ipfsaddr "github.com/ipfs/go-ipfs-addr"
 	libp2p "github.com/libp2p/go-libp2p"
@@ -18,20 +19,27 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
 	proto "github.com/libp2p/go-libp2p-protocol"
+	"io"
 	"log"
 	"os"
 	"time"
 )
 
 var protocolID = proto.ID("/p3lib/fullrt/1.0")
+
+// we define static and well known address and ID for `nodeb` so that `nodea`
+// can connect directly without the need for a discovery mechanism (demo
+// purposes)
 var nodebConnAddr = "/ip4/127.0.0.1/tcp/4002"
 var nodebID = "QmcJzkupSVnePbJWBFU6YXq5Gk59m8cyY8KwFN57cMcAix"
 
 func main() {
+	// spins up `nodeb`
 	go func() {
 		startNodeB()
 	}()
 
+	// spins up `nodea`
 	go func() {
 		startNodeA()
 	}()
@@ -65,17 +73,50 @@ func startNodeA() {
 		log.Fatal(err)
 	}
 
-	stream, err := host.NewStream(context.Background(), peeridb, protocolID)
+	// now that `nodea` and `nodeb` know about each other, `nodea` starts a new
+	// stream with the protocol ID `/p3lib/fullrt/1.0` which requests the full
+	// routing table of the destination node (in this case, `nodeb`)
+	s, err := host.NewStream(context.Background(), peeridb, protocolID)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = stream.Write([]byte{})
+	// the content of the request is empty. in the future, the protocol will
+	// define options such as compression and max number of entries. those options
+	// will be sent over the wire
+	_, err = s.Write([]byte{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	log.Println("**NodeA** | fullRT request sent")
+
+	// receives and parses response from `nodeb`
+	var res []byte
+	p := make([]byte, 4)
+	for {
+		n, err := s.Read(p)
+		if err == io.EOF {
+			break
+		}
+		res = append(res, p[:n]...)
+	}
+
+	log.Println("**NodeA** | nodeb routing table received:")
+
+	// parses response as routing table
+	fullrt := frt.RoutingTableRaw{}
+	err = json.Unmarshal(res, &fullrt)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// prints every entry of the received full routing table
+	for _, r := range fullrt {
+		log.Println(peer.IDB58Decode(r))
+	}
+
+	s.Close()
 }
 
 func startNodeB() {
@@ -102,7 +143,6 @@ func startNodeB() {
 	if err != nil {
 		panic(err)
 	}
-
 	for _, peerAddr := range bootstrapPeers {
 		pAddr, _ := ipfsaddr.ParseString(peerAddr)
 		peerinfo, _ := pstore.InfoFromP2pAddr(pAddr.Multiaddr())
@@ -117,23 +157,25 @@ func startNodeB() {
 		log.Fatal(err)
 	}
 
-	// #TODO: initiates fullRT provider
+	// prepares full routing table provider component. it is responsible parse and
+	// provide a canonical representation of routing tables when requested. in the
+	// future, will include options to compressed and sample routing table entries
+	// in order to save bandwidth
 	fullRtProv := frt.NewRTProvider(kad.RoutingTable())
 
 	// sets the handler to reply for full routing table requests
-	host.SetStreamHandler(protocolID, func(stream inet.Stream) {
-		log.Println("==NodeB== | received new stream: ", stream)
+	host.SetStreamHandler(protocolID, func(s inet.Stream) {
+		log.Println("==NodeB== | received new stream: ", s)
 
-		defer stream.Close()
+		defer s.Close()
 
 		// fetches and encodes full routing table
 		err, rtBytes := fullRtProv.GetFullRoutingTable()
 		if err != nil {
 			log.Fatal(err)
 		}
-
 		// writes results to stream
-		_, err = stream.Write(rtBytes)
+		_, err = s.Write(rtBytes)
 		if err != nil {
 			log.Fatal(err)
 		}

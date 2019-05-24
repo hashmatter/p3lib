@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	kb "github.com/libp2p/go-libp2p-kbucket"
+	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 type RoutingTableProvider interface {
@@ -31,15 +32,15 @@ func (rtp *RTProvider) GetFullRoutingTable() (error, []byte) {
 	rtr := RoutingTableRaw{}
 
 	// for now p3lib only supports libp2p hosts, but in the future more
-	// node implementations can be added. the translation from a particular
+	// routing table formats can be added. the translation from a particular
 	// implementation to the routing table format expected by the protocol is
-	// performed here
+	// sone here
 	switch r := rt.(type) {
 
-	// translate libp2p routing table to raw registry expected by the protocol
+	// translate libp2p routing table to raw registry expected by the protocol.
 	case *kb.RoutingTable:
 		for _, pid := range r.ListPeers() {
-			rtr = append(rtr, string(pid))
+			rtr = append(rtr, peer.IDB58Encode(pid))
 		}
 
 	default:
