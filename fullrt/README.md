@@ -1,4 +1,4 @@
-## fullrt - Protocol for full routing table exchange
+# fullrt - Protocol for full routing table exchange
 
 `p3lib-fullrt` defines and implements a protocol for peers in P2P networks to
 request and provide information about their routing table. This mechanism can be
@@ -6,7 +6,7 @@ used as a building block to construct protocols for privacy preserving lookups
 in P2P networks such as DHTs. It can also be used as a way for peers to exchange
 routing information for metrics, security checks [1]  and performance optimizations.
 
-### p3lib-fullrt as a privacy enhancing mechanism for DHT lookups
+## p3lib-fullrt as a privacy enhancing mechanism for DHT lookups
 
 `p3lib-fullrt` has been designed primarily as a mechanism for enhancing privacy
 on DHT lookups. In many vanilla DHT designs (e.g. Kademlia DHT [2]), the lookup
@@ -22,7 +22,7 @@ perspective than vanilla Kademlia - is still vulnerable to passive Range Estimat
 attacks [1] and active Lookup Bias attacks [1]. These vulnerabilities can be
 addressed by other primitives and protocols implemented by `p3lib`.
 
-### API
+## API
 
 ```go
 // instantiates a routing table 
@@ -49,12 +49,12 @@ Check the [libp2p example](./examples/libp2p) to see how to define the full
 blown protocol to exchange full routing table information between two network 
 peers.
 
-### Examples
+## Examples
 
 Check the [example directory](./examples/) to see how to use `p3lib-fullrt` with
 [libp2p](https://github.com/libp2p/go-libp2p).
 
-### FAQ
+## FAQ
 
 **1. Is using p3lib-fullrt enough to ensure that the lookup initiator's
 interest not disclosed to other peers?**

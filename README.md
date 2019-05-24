@@ -17,6 +17,7 @@ library.
 | Layer | p3lib components | implementation status |
 | --- | --- | --- |
 | Packet format  | `p3lib-sphinx` [1]  | v0.1 |
+| Full Routing Table request | `p3lib-fullrt` [2] | v0.1 |
 | Plausible deniability DHT lookup | `p3lib-cfrd` | specs |
 | Octopus lookup | `p3lib-multipathlookup`, `p3lib-shadownode` [2] | specs |
 

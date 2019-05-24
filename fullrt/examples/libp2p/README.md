@@ -22,9 +22,10 @@ resolved.
 
 ### Running the example
 
-1) Run `$ make`. 
+1) `go run .`
 
 The main Makefile step will spawn 2 processes - one for `node_a` and another for
-`node_b`. The messages will be printed for understanding.
+`node_b`. The messages are printed to stdout with node tags to make it easier to
+understand the protocol flow.
 
 
