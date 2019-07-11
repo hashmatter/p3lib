@@ -390,6 +390,7 @@ func generateSharedSecrets(circuitPubKeys []ecdsa.PublicKey,
 		// with the scalar_multiplication between the blinding factor and the
 		// private scalar of the previous group element
 		newGroupElement, nextPrivElement := deriveGroupElementPair(privElement, blindingF, curve)
+
 		// computes shared secret
 		currentHopPubKey := circuitPubKeys[i]
 		blindedPrivateKey := ecdsa.PrivateKey{
