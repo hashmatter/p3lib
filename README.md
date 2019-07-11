@@ -19,8 +19,8 @@ library.
   suggested by OctupusDHT [2], to protect DHT initiator privacy during the
 recursive network lookup.
 
-- `p3lib-sinkhole` is a PIR system [3] that delivers provable privacy for DHT
-  lookup initiators
+- `p3lib-sinkhole` is a computational PIR system [3] that complements DHT lookups
+	and guarantees probavle privacy for DHT lookup initiators
 
 
 | Layer | p3lib components | implementation status |
