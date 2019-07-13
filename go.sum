@@ -1,5 +1,7 @@
 github.com/AndreasBriese/bbloom v0.0.0-20180913140656-343706a395b7/go.mod h1:bOvUY6CB00SOBii9/FifXqc0awNKxLFCL/+pkDPuyl8=
 github.com/Kubuxu/go-os-helper v0.0.1/go.mod h1:N8B+I7vPCT80IcP58r50u4+gEEcsZETFUpAzWW2ep1Y=
+github.com/Roasbeef/go-go-gadget-paillier v0.0.0-20181009074315-14f1f86b6000 h1:jcW1SFUzfkw4HSXS3O/DoFOmXe18e9wqsrF2f7cgCyM=
+github.com/Roasbeef/go-go-gadget-paillier v0.0.0-20181009074315-14f1f86b6000/go.mod h1:vrrslkOJ8o7Ofmeg/lskw5yR+tml1iazaTSYVai9Kq8=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da h1:KjTM2ks9d14ZYCvmHS9iAKVt9AyzRSqNU1qabPih5BY=
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da/go.mod h1:eHEWzANqSiWQsof+nXEI9bUVUyV6F53Fp89EuCh2EAA=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
