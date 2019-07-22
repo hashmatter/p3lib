@@ -69,10 +69,13 @@ func TestQueryPaillier(t *testing.T) {
 	q := make([][]byte, int(num_query_fields))
 	q_position := getIndex([]byte(k))
 
+	// q_position has to be withing the q domain space
+	fmt.Println(len(q), q_position)
+
 	for i := range q {
-		v := []byte{0}
+		v := new(big.Int).SetInt64(0).Bytes()
 		if int64(i) == q_position.Int64() {
-			v = []byte{1}
+			v = new(big.Int).SetInt64(1).Bytes()
 		}
 
 		el, err := paillier.Encrypt(&cliPrivKey.PublicKey, v)
@@ -87,12 +90,23 @@ func TestQueryPaillier(t *testing.T) {
 		log.Fatal(err)
 	}
 
-	t.Error(array_result)
-
-	// go through result and multiply homomorphically
-
 	// check result
 	for i, row := range array_result {
-		fmt.Println(i, row)
+		dec, err := paillier.Decrypt(cliPrivKey, row)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		if i == 12336 { // where query is added
+			t.Error(row)
+			t.Error(dec)
+		}
+
+		if len(dec) != 0 { //big.NewInt(0) {
+			t.Error(dec)
+		}
+		//fmt.Println(i, dec)
 	}
+	t.Error("printout purposes")
 }

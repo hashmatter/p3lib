@@ -45,13 +45,10 @@ func (s *Sinkhole) Query(ss string, q [][]byte, pubkey paillier.PublicKey) ([][]
 	// go through bucket rowns and multiply homomorphically
 	for i, row := range buck.store {
 
-		// TODO: init this before
+		// TODO: init this before ??
 		if len(row) == 0 {
 			row = []byte{0}
 		}
-
-		// how is this de-mult done?
-		fmt.Println("--->", q[i], &pubkey, row)
 
 		q[i] = paillier.Mul(&pubkey, q[i], row)
 	}
@@ -90,3 +87,5 @@ func (s *Sinkhole) route(sufx string) (bucket, error) {
 func getIndex(k []byte) *big.Int {
 	return big.NewInt(0).SetBytes(k)
 }
+
+var _ = fmt.Sprintf("remove me")
