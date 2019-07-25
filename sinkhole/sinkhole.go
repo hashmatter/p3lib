@@ -2,6 +2,7 @@ package sinkhole
 
 import (
 	"crypto"
+	"errors"
 	"fmt"
 	paillier "github.com/Roasbeef/go-go-gadget-paillier"
 	"math"
@@ -70,12 +71,11 @@ func (s *Sinkhole) Add(suffix string, key []byte, value []byte) error {
 		b = s.buckets[suffix]
 	}
 
-	// breaks key into [suffix_space:private_space:tail_space]
-	// TODO: refactor, add checks for boundaries, etc..
-	tail_space := s.space_len - (s.suffix_space_len + s.private_space_len)
-	priv_space_key := key[s.suffix_space_len : s.space_len-tail_space]
+	index, err := calculateIndex(s.space_len, s.suffix_space_len, s.private_space_len, key)
+	if err != nil {
+		return err
+	}
 
-	index := getIndex(priv_space_key)
 	b.store[index.Int64()] = value
 	return nil
 }
@@ -86,6 +86,32 @@ func (s *Sinkhole) route(sufx string) (bucket, error) {
 
 func getIndex(k []byte) *big.Int {
 	return big.NewInt(0).SetBytes(k)
+}
+
+// breaks key into [suffix_space:private_space:tail_space]
+// TODO: refactor, add checks for boundaries, etc..
+func calculateIndex(spaceLen, suffixLen, privLen int, key []byte) (*big.Int, error) {
+	tailSpace := spaceLen - (suffixLen + privLen)
+	privSpaceKey := key[suffixLen : spaceLen-tailSpace]
+
+	for i, _ := range privSpaceKey {
+		b, err := hexByte(privSpaceKey[i])
+		if err != nil {
+			return big.NewInt(0), err
+		}
+		privSpaceKey[i] = b
+	}
+	return big.NewInt(0).SetBytes(privSpaceKey), nil
+}
+
+func hexByte(b byte) (byte, error) {
+	if b >= 48 && b <= 57 {
+		return (b - 48), nil
+	}
+	if b >= 97 && b <= 102 {
+		return (b - 87), nil
+	}
+	return 0, errors.New("out of hex boudaries")
 }
 
 var _ = fmt.Sprintf("remove me")

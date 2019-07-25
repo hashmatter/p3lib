@@ -20,13 +20,14 @@ func TestGetIndex(t *testing.T) {
 		t.Error(fmt.Sprintf("%v != %v", res, a_ex))
 	}
 
+	// 00000001 0000001
 	b := []byte{1, 1}
 	b_ex := big.NewInt(257)
 	if res := getIndex(b); res.Cmp(b_ex) != 0 {
 		t.Error(fmt.Sprintf("%v != %v", res, b_ex))
 	}
 
-	// 00000001 00000001 00000011 = 2pow1 + 256 + 3
+	// 00000001 00000001 00000011 = 2pow16 + 256 + 3
 	c := []byte{1, 1, 3}
 	c_ex := big.NewInt(65536 + 256 + 3)
 	if res := getIndex(c); res.Cmp(c_ex) != 0 {
@@ -43,7 +44,7 @@ func TestQueryPaillier(t *testing.T) {
 
 	space_len := 16
 	suffix_space_len := 4
-	private_space_len := 2 //4
+	private_space_len := 2
 
 	// bootstrap server
 	privKey, _ := paillier.GenerateKey(rand.New(rand.NewSource(1)), 128)
@@ -52,7 +53,7 @@ func TestQueryPaillier(t *testing.T) {
 	// add entry to provider
 	// 1dfe003ab24b2213 == value1
 	kv_suffix_space := "1dfe"
-	k := "1dfe003ab24b22" //16 bytes key
+	k := "1dfe9a3ab24b22" //16 bytes key
 	v := "value1"
 
 	err := sinkhole.Add(kv_suffix_space, []byte(k), []byte(v))
@@ -67,10 +68,7 @@ func TestQueryPaillier(t *testing.T) {
 	// TODO: Refactor!
 	num_query_fields := math.Pow(2, float64(8*private_space_len))
 	q := make([][]byte, int(num_query_fields))
-	q_position := getIndex([]byte(k))
-
-	// q_position has to be withing the q domain space
-	fmt.Println(len(q), q_position)
+	q_position, _ := calculateIndex(space_len, suffix_space_len, private_space_len, []byte(k))
 
 	for i := range q {
 		v := new(big.Int).SetInt64(0).Bytes()
@@ -91,22 +89,24 @@ func TestQueryPaillier(t *testing.T) {
 	}
 
 	// check result
-	for i, row := range array_result {
+	var res [][]byte
+	for _, row := range array_result {
 		dec, err := paillier.Decrypt(cliPrivKey, row)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 
-		if i == 12336 { // where query is added
-			t.Error(row)
-			t.Error(dec)
+		if len(dec) != 0 {
+			res = append(res, dec)
 		}
-
-		if len(dec) != 0 { //big.NewInt(0) {
-			t.Error(dec)
-		}
-		//fmt.Println(i, dec)
 	}
-	t.Error("printout purposes")
+
+	if len(res) != 1 {
+		t.Error("there should be one result, got ", len(res))
+	}
+
+	if string(res[0]) != v {
+		t.Error("wrong result: ", v)
+	}
 }
