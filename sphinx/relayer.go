@@ -5,7 +5,6 @@ import (
 	ec "crypto/elliptic"
 	"crypto/sha256"
 	"fmt"
-	"github.com/hashmatter/p3lib"
 	scrypto "github.com/hashmatter/p3lib/sphinx/crypto"
 )
 
@@ -168,6 +167,3 @@ func equal(a, b []byte) bool {
 
 	return true
 }
-
-var _ p3lib.Relayer = (*RelayerCtx)(nil)
-var _ p3lib.Peer = (*RelayerCtx)(nil)
