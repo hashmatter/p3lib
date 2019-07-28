@@ -52,7 +52,7 @@ the header; 2) decrypt the set of routing information needed by the relay and 3)
 shuffle the ephemeral key for the next hop.
 
 A packet encapsulates both the `header` and the message `payload`. Both `header`
-and `paylaod` must be invariant in length, so that colluding relays cannot link 
+and `payload` must be invariant in length, so that colluding relays cannot link 
 packets across the circuit. A packet also contains a `version`, `routing_info`
 and `header_hmac`. The size of the packet is the sum of the size of those
 fields:
