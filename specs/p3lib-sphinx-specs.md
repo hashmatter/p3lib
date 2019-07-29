@@ -2,7 +2,7 @@
 
 `p3lib-sphinx` implements the sphinx packet format as defined by [1]. This
 package implements the data structures and primitives for creating, relaying and
-verifying sphinx packets for onion routing and mix-networks.:w
+verifying sphinx packets for onion routing and mix-networks.
 
 ## Protocol overview
 
