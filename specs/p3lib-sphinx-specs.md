@@ -2,7 +2,7 @@
 
 `p3lib-sphinx` implements the sphinx packet format as defined by [1]. This
 package implements the data structures and primitives for creating, relaying and
-verifying sphinx packets for onion routing and mix-networks.:w
+verifying sphinx packets for onion routing and mix-networks.
 
 ## Protocol overview
 
@@ -52,7 +52,7 @@ the header; 2) decrypt the set of routing information needed by the relay and 3)
 shuffle the ephemeral key for the next hop.
 
 A packet encapsulates both the `header` and the message `payload`. Both `header`
-and `paylaod` must be invariant in length, so that colluding relays cannot link 
+and `payload` must be invariant in length, so that colluding relays cannot link 
 packets across the circuit. A packet also contains a `version`, `routing_info`
 and `header_hmac`. The size of the packet is the sum of the size of those
 fields:
