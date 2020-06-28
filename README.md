@@ -43,8 +43,6 @@ Open an issue or [let's have a chat](https://twitter.com/gpestana)!.
 
 [1] [Sphinx: A Compact and Provably Secure Mix Format](https://www.cypherpunks.ca/~iang/pubs/SphinxOR.pdf)
 
-[2] [Octopus: A Secure and Anonymous DHT Lookup](https://ieeexplore.ieee.org/document/6258005)
-
 [3] [Private Information Retrieval](https://wikipedia.com/Private_information_retrieval)
 
 ### Contributing
